@@ -24,6 +24,8 @@ import (
 	"regexp"
 	"strings"
 
+	"golang.org/x/oauth2"
+
 	"github.com/google/go-github/github"
 	// A copy of istio.io/test-infra/toolbox/util
 	// TODO: refactor it since we aren't using a lot of the features
@@ -36,18 +38,19 @@ const (
 
 var (
 	// Program flags
-	branch    = flag.String("branch", "", "Specify a branch other than the current one")
-	endDate   = flag.String("end_date", "", "End date")
-	htmlFile  = flag.String("html-file", "", "Produce a html version of the notes")
-	label     = flag.String("label", "release-note", "Release-note label")
-	mdFile    = flag.String("markdown-file", "", "Specify an alt file to use to store notes")
-	order     = flag.String("order", "desc", "The sort order if sort parameter is provided. One of asc or desc.")
-	org       = flag.String("user", "kubernetes", "Github owner or org")
-	output    = flag.String("output", "./", "Path to output file")
-	repos     = flag.String("repos", "", "Github repos, separate using \",\"")
-	sort      = flag.String("sort", "create", "The sort field. Can be comments, created, or updated.")
-	startDate = flag.String("start_date", "", "Start date")
-	version   = flag.String("version", "", "Release version")
+	branch      = flag.String("branch", "", "Specify a branch other than the current one")
+	endDate     = flag.String("end_date", "", "End date")
+	githubToken = flag.String("github-token", "", "Must be specified")
+	htmlFile    = flag.String("html-file", "", "Produce a html version of the notes")
+	label       = flag.String("label", "release-note", "Release-note label")
+	mdFile      = flag.String("markdown-file", "", "Specify an alt file to use to store notes")
+	order       = flag.String("order", "desc", "The sort order if sort parameter is provided. One of asc or desc.")
+	org         = flag.String("user", "kubernetes", "Github owner or org")
+	output      = flag.String("output", "./", "Path to output file")
+	repos       = flag.String("repos", "", "Github repos, separate using \",\"")
+	sort        = flag.String("sort", "create", "The sort field. Can be comments, created, or updated.")
+	startDate   = flag.String("start_date", "", "Start date")
+	version     = flag.String("version", "", "Release version")
 )
 
 func main() {
@@ -84,7 +87,15 @@ func main() {
 	log.Printf("File paths: %s|%s|%s", prNotes, *mdFile, *htmlFile)
 
 	// TODO: there are log init, timestamp begin in relnotes script
-	fetchPRFromLog(*branch, branchRange, *org, "kubernetes")
+	prs, err := fetchPRFromLog(*branch, branchRange, *org, "kubernetes")
+	if err != nil {
+		log.Printf("Failed to get PRs from log: %s", err)
+		return
+	}
+
+	for _, pr := range prs {
+		log.Printf("PRs from git log: %v.", pr)
+	}
 
 	repoList := strings.Split(*repos, ",")
 	for _, repo := range repoList {
@@ -107,18 +118,22 @@ func main() {
 }
 
 func fetchPRFromLog(currentBranch string, branchRange string, org string, repo string) ([]string, error) {
+	s := make([]string, 0)
+
 	// Determine remote branch head
 	gitBranchCommand := "git rev-parse refs/remotes/origin/" + currentBranch
 	branchHead, err := u.Shell(gitBranchCommand)
 	if err != nil {
 		return nil, err
 	}
+	branchHead = strings.TrimSpace(branchHead)
 
 	// Last release
 	lastRelease, err := LastRelease(org, repo)
 	if err != nil {
 		return nil, err
 	}
+
 	// If lastRelease[currentBranch] is unset attempt to get the last release from the parent branch
 	// and then master
 	if idx := strings.LastIndex(currentBranch, "."); lastRelease[currentBranch] == "" && idx != -1 {
@@ -130,12 +145,15 @@ func fetchPRFromLog(currentBranch string, branchRange string, org string, repo s
 
 	var startTag string
 	var releaseTag string
-	prettyRange := branchRange
+
 	// Default range
+	generatedBranchRange := branchRange
 	if branchRange == "" {
-		prettyRange = lastRelease[currentBranch] + ".." + branchHead
+		generatedBranchRange = lastRelease[currentBranch] + ".." + branchHead
 	}
-	v, err := regexp.Compile("([v0-9.]*-*(alpha|beta|rc)*.*[0-9]*)..([v0-9.]*-*(alpha|beta|rc)*.*[0-9]*)$")
+
+	// Parse start and release tag
+	v, err := regexp.Compile("([v0-9.]*-*(alpha|beta|rc)*\\.*[0-9]*)\\.\\.([v0-9.]*-*(alpha|beta|rc)*\\.*[0-9]*)$")
 	if err != nil {
 		return nil, err
 	}
@@ -150,21 +168,56 @@ func fetchPRFromLog(currentBranch string, branchRange string, org string, repo s
 	if startTag == "" {
 		panic(fmt.Sprintf("Unable to set beginning of range automatically. Specify on the command-line. Exiting..."))
 	}
-	// TODO: haven't tested tags' behavior yet.
-	log.Printf("pretty range: %v", prettyRange)
-	log.Printf("start: %v", startTag)
-	log.Printf("release: %v", releaseTag)
+	if releaseTag != "" {
+		generatedBranchRange = startTag + ".." + releaseTag
+	} else {
+		generatedBranchRange = startTag + ".." + branchHead
+	}
+
+	// Validate generated range
+	_, err = u.Shell("git rev-parse " + generatedBranchRange)
+	if err != nil {
+		panic(fmt.Sprintf("Invalid tags/range %v!", generatedBranchRange))
+	}
+
+	gitLogCommand := "git log " + generatedBranchRange + " --format=\"%%s\" --grep=Merge"
+	lines, err := u.Shell(gitLogCommand)
+	if err != nil {
+		return nil, err
+	}
+	vCherryPick, err := regexp.Compile("automated-cherry-pick-of-#([0-9]+)-{1,}")
+	if err != nil {
+		return nil, err
+	}
+	vMergePR, err := regexp.Compile("Merge pull request #([0-9]+) from")
+	if err != nil {
+		return nil, err
+	}
+	for _, line := range strings.Split(lines, "\n") {
+		if pr := vCherryPick.FindStringSubmatch(line); pr != nil {
+			s = append(s, pr[1])
+		} else if pr := vMergePR.FindStringSubmatch(line); pr != nil {
+			s = append(s, pr[1])
+		}
+	}
 
 	// Get slice of PRs by executing git log
-	return nil, nil
+	return s, nil
 }
 
 // LastRelease looks up the list of releases on github and puts the last release per branch
 // into a branch-indexed dictionary
 func LastRelease(owner string, repo string) (map[string]string, error) {
 	r := make(map[string]string)
-	g := github.NewClient(nil)
-	repoRelease, _, err := g.Repositories.ListReleases(context.Background(), owner, repo, &github.ListOptions{Page: 2, PerPage: 10})
+
+	ctx := context.Background()
+	ts := oauth2.StaticTokenSource(
+		&oauth2.Token{AccessToken: *githubToken},
+	)
+	tc := oauth2.NewClient(ctx, ts)
+	g := github.NewClient(tc)
+	// TODO: using default #pages and per page options
+	repoRelease, _, err := g.Repositories.ListReleases(context.Background(), owner, repo, &github.ListOptions{})
 	if err != nil {
 		return nil, err
 	}
@@ -177,7 +230,7 @@ func LastRelease(owner string, repo string) (map[string]string, error) {
 		if strings.Contains(*release.Name, "-alpha") && r["master"] == "" {
 			r["master"] = *release.Name
 		} else {
-			v, err := regexp.Compile("v([0-9]+.[0-9]+).([0-9]+(-.+)?)")
+			v, err := regexp.Compile("v([0-9]+\\.[0-9]+)\\.([0-9]+(-.+)?)")
 			if err != nil {
 				return nil, err
 			}
