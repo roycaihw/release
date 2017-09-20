@@ -329,6 +329,7 @@ generate_notes () {
 
   # If range is unterminated, finish it with $branch_head
   [[ $range =~ \.\.$ ]] && range+=$branch_head
+  echo $range
 
   # Validate range
   if ! git rev-parse $range &>/dev/null; then
