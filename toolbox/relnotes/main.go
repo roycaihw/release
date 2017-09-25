@@ -16,7 +16,9 @@ package main
 
 import (
 	"flag"
+	"io"
 	"log"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -26,8 +28,11 @@ import (
 
 var (
 	// Flags
-	branch      = flag.String("branch", "", "Specify a branch other than the current one")
-	endDate     = flag.String("end_date", "", "End date")
+	branch  = flag.String("branch", "", "Specify a branch other than the current one")
+	endDate = flag.String("end_date", "", "End date")
+	// TODO: golang flags and parameters syntex problem
+	full = flag.Bool("full", false, "Force 'full' release format to show all sections of release notes. "+
+		"(This is the *default* for new branch X.Y.0 notes)")
 	githubToken = flag.String("github-token", "", "Must be specified")
 	htmlFile    = flag.String("html-file", "", "Produce a html version of the notes")
 	mdFile      = flag.String("markdown-file", "", "Specify an alt file to use to store notes")
@@ -70,7 +75,7 @@ func main() {
 	log.Printf("File paths: %s|%s|%s", prNotes, *mdFile, *htmlFile)
 
 	// Determine range
-	generatedBranchRange, err := u.DetermineBranchRange(*branch, branchRange, *org, "kubernetes", *githubToken)
+	generatedBranchRange, startTag, releaseTag, err := u.DetermineBranchRange(*branch, branchRange, *org, "kubernetes", *githubToken)
 	if err != nil {
 		log.Printf("Failed to determine branch range: %s", err)
 		return
@@ -102,6 +107,43 @@ func main() {
 		}
 	}
 	log.Printf("#Final release note PRs: %v.", len(notesReleaseNote))
+
+	// Generate release note
+	log.Printf("Generating release notes...")
+	prNotesFile, err := os.Create(prNotes)
+	if err != nil {
+		log.Printf("Failed to create release note file: %v", err)
+		return
+	}
+	defer prNotesFile.Close()
+
+	// Bootstrap notes for major (new branch) releases
+	if *full || u.IsVer(releaseTag, "dotzero") {
+		// Check for draft and use it if available
+		log.Printf("Checking if draft release notes exist for %v...", releaseTag)
+		resp, err := http.Get(u.K8SGithubRawOrg + "/features/master/" + *branch + "/release-notes-draft.md")
+		// TODO: find a better way to tell error response
+		if err == nil && (resp.StatusCode == 200 || resp.StatusCode == 304) {
+			defer resp.Body.Close()
+			log.Printf("Draft found - using for release notes...")
+			_, err = io.Copy(prNotesFile, resp.Body)
+			if err != nil {
+				log.Printf("Error during copy file: %v", err)
+				return
+			}
+		} else {
+			log.Printf("No draft found - creating generic template...")
+			prNotesFile.WriteString("## Major Themes\n\n* TBD\n\n## Other notable improvements\n\n" +
+				"* TBD\n\n## Known Issues\n\n* TBD\n\n## Provider-specific Notes\n\n* TBD\n\n")
+		}
+	}
+
+	// Aggregate all previous release in series
+	prNotesFile.WriteString("### Previous Release Included in " + releaseTag + "\n")
+	prNotesFile.WriteString("## Changelog since " + startTag + "\n")
+
+	// Release note for different labels. TODO: release-note for now
+	prNotesFile.WriteString("### Other notable changes\n")
 
 	return
 }

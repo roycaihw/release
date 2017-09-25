@@ -63,19 +63,19 @@ func FetchPRFromLog(generatedBranchRange string) ([]string, error) {
 }
 
 // DetermineBranchRange determines valid git log range based on input range for input branch
-func DetermineBranchRange(currentBranch string, branchRange string, org string, repo string, githubToken string) (string, error) {
+func DetermineBranchRange(currentBranch string, branchRange string, org string, repo string, githubToken string) (string, string, string, error) {
 	// Determine remote branch head
 	gitBranchCommand := "git rev-parse refs/remotes/origin/" + currentBranch
 	branchHead, err := RunShell(gitBranchCommand)
 	if err != nil {
-		return "", err
+		return "", "", "", err
 	}
 	branchHead = strings.TrimSpace(branchHead)
 
 	// Last release
 	lastRelease, err := LastRelease(org, repo, githubToken)
 	if err != nil {
-		return "", err
+		return "", "", "", err
 	}
 
 	// If lastRelease[currentBranch] is unset attempt to get the last release from the parent branch
@@ -99,7 +99,7 @@ func DetermineBranchRange(currentBranch string, branchRange string, org string, 
 	// Parse start and release tag
 	v, err := regexp.Compile("([v0-9.]*-*(alpha|beta|rc)*\\.*[0-9]*)\\.\\.([v0-9.]*-*(alpha|beta|rc)*\\.*[0-9]*)$")
 	if err != nil {
-		return "", err
+		return "", "", "", err
 	}
 	tags := v.FindStringSubmatch(branchRange)
 	if tags != nil {
@@ -124,5 +124,16 @@ func DetermineBranchRange(currentBranch string, branchRange string, org string, 
 		panic(fmt.Sprintf("Invalid tags/range %v!", generatedBranchRange))
 	}
 
-	return generatedBranchRange, nil
+	return generatedBranchRange, startTag, releaseTag, nil
+}
+
+// IsVer checks if input version number is certain version type
+func IsVer(version string, t string) bool {
+	m := make(map[string]string)
+	m["release"] = "v(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-[a-zA-Z0-9]+)*\\.*(0|[1-9][0-9]*)?"
+	m["dotzero"] = "v(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.0$"
+	m["build"] = "([0-9]{1,})\\+([0-9a-f]{5,40})"
+
+	re, _ := regexp.Compile(m[t])
+	return re.MatchString(version)
 }

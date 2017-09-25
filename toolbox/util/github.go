@@ -25,6 +25,11 @@ import (
 	"golang.org/x/oauth2"
 )
 
+const (
+	// K8SGithubRawOrg is the url prefix for getting raw github user content
+	K8SGithubRawOrg = "https://raw.githubusercontent.com/kubernetes"
+)
+
 // LastRelease looks up the list of releases on github and puts the last release per branch
 // into a branch-indexed dictionary
 func LastRelease(owner string, repo string, githubToken string) (map[string]string, error) {
