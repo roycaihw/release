@@ -5,7 +5,7 @@ go_library(
     srcs = ["main.go"],
     visibility = ["//visibility:private"],
     deps = [
-        "//toolbox/util:go_default_library",
+	"//toolbox/util:go_default_library",
         "//vendor/github.com/google/go-github/github:go_default_library",
         "//vendor/golang.org/x/oauth2:go_default_library",
     ],

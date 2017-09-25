@@ -3,10 +3,9 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 go_library(
     name = "go_default_library",
     srcs = [
-        "commonUtils.go",
-        "dependency.go",
-        "githubClient.go",
-        "githubUtils.go",
+        "common.go",
+        "gitlib.go",
+        "github.go",
     ],
     visibility = ["//visibility:public"],
     deps = [
