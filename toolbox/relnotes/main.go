@@ -62,6 +62,11 @@ func main() {
 		}
 	}
 
+	// If githubToken is not specified in program flag, use $GITHUB_TOKEN
+ 	if *githubToken == "" {
+ 		*githubToken = os.Getenv("GITHUB_TOKEN")
+ 	}
+
 	// Generate output file path for temporary generated release note and PR notes
 	prNotes := "/tmp/" + prog + "-" + *branch + "-prnotes"
 	if *mdFile != "" {
