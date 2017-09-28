@@ -77,7 +77,7 @@ func LastRelease(owner string, repo string, githubToken string) (map[string]stri
 }
 
 // FetchPRByLabel gets PR from specified repo with input label
-// NOTE: Github API only allows fetching the first 1000 results, therefore the max #PR returned from this method is 1000.
+// NOTE: Github Search API only allows fetching the first 1000 results, therefore the max #PR returned from this method is 1000.
 func FetchPRByLabel(label string, org string, repo string, githubToken string, sort string, order string) (map[string]bool, error) {
 	m := make(map[string]bool)
 	var queries []string
@@ -130,4 +130,32 @@ func FetchPRByLabel(label string, org string, repo string, githubToken string, s
 	log.Printf("Total #prs with release-note label: %v.", numPRs)
 
 	return m, nil
+}
+
+// FetchAllIssues gets all the Issues from a specified repo
+func FetchAllIssues(owner string, repo string, githubToken string, sort string, order string) ([]*github.Issue, error) {
+	ctx := context.Background()
+	ts := oauth2.StaticTokenSource(
+		&oauth2.Token{AccessToken: githubToken},
+	)
+	tc := oauth2.NewClient(ctx, ts)
+	g := github.NewClient(tc)
+
+	numPerPage := 100
+	listOption := &github.ListOptions{
+		Page:    1,
+		PerPage: numPerPage,
+	}
+	options := &github.IssueListByRepoOptions{
+		Sort:        sort,
+		Direction:   order,
+		ListOptions: *listOption,
+	}
+	issueResult, _, err := g.Issues.ListByRepo(context.Background(), owner, repo, options)
+	if err != nil {
+		log.Printf("Failed to fetch Issues from %s: %s", repo, err)
+		return nil, err
+	}
+
+	return issueResult, nil
 }
