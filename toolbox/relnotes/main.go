@@ -33,7 +33,7 @@ var (
 	// TODO: golang flags and parameters syntex problem
 	full = flag.Bool("full", false, "Force 'full' release format to show all sections of release notes. "+
 		"(This is the *default* for new branch X.Y.0 notes)")
-	githubToken = flag.String("github-token", "", "Must be specified")
+	githubToken = flag.String("github-token", "", "Must be specified, or set the GITHUB_TOKEN environment variable")
 	htmlFile    = flag.String("html-file", "", "Produce a html version of the notes")
 	mdFile      = flag.String("markdown-file", "", "Specify an alt file to use to store notes")
 	order       = flag.String("order", "desc", "The sort order if sort parameter is provided. One of asc or desc.")
