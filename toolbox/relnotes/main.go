@@ -22,6 +22,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"fmt"
 
 	u "k8s.io/release/toolbox/util"
 )
@@ -112,6 +113,13 @@ func main() {
 		}
 	}
 	log.Printf("#Final release note PRs: %v.", len(notesReleaseNote))
+	
+	// Get all Issues from github API for specified repo
+	log.Printf("Fetching all issues from %s...", *repo)
+	issues, err := u.FetchAllIssues(*org, "kubernetes", *githubToken, *sort, *order)
+	if err != nil {
+		log.Printf("Failed to fetch all Issues from %s: %s", *repo, err)
+	}
 
 	// Generate release note
 	log.Printf("Generating release notes...")
@@ -149,6 +157,9 @@ func main() {
 
 	// Release note for different labels. TODO: release-note for now
 	prNotesFile.WriteString("### Other notable changes\n")
+	for _, issue := range issues {
+		prNotesFile.WriteString(fmt.Sprintf("    %s\n", *(issue.Title)))
+	}
 
 	return
 }
