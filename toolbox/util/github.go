@@ -134,6 +134,8 @@ func FetchPRByLabel(label string, org string, repo string, githubToken string, s
 
 // FetchAllIssues gets all the Issues from a specified repo
 func FetchAllIssues(owner string, repo string, githubToken string, sort string, order string) ([]*github.Issue, error) {
+	a := make([]*github.Issue, 0)
+
 	ctx := context.Background()
 	ts := oauth2.StaticTokenSource(
 		&oauth2.Token{AccessToken: githubToken},
@@ -141,6 +143,7 @@ func FetchAllIssues(owner string, repo string, githubToken string, sort string, 
 	tc := oauth2.NewClient(ctx, ts)
 	g := github.NewClient(tc)
 
+	q := strings.Join(queries, " ")
 	numPerPage := 100
 	listOption := &github.ListOptions{
 		Page:    1,
@@ -151,11 +154,28 @@ func FetchAllIssues(owner string, repo string, githubToken string, sort string, 
 		Direction:   order,
 		ListOptions: *listOption,
 	}
-	issueResult, _, err := g.Issues.ListByRepo(context.Background(), owner, repo, options)
+	_, response, err := g.Issues.ListByRepo(context.Background(), owner, repo, options)
 	if err != nil {
-		log.Printf("Failed to fetch Issues from %s: %s", repo, err)
+		log.Printf("Failed to get response from github: %s", err)
 		return nil, err
 	}
+	numPages := response.LastPage
+	count := response.FirstPage - 1
+	for count < numPages {
+		listOption.Page = count + 1
+		options.ListOptions = *listOption
+		issueResult, _, err := g.Issues.ListByRepo(context.Background(), owner, repo, options)
+		if err != nil {
+			log.Printf("Failed to fetch Issues from %s: %s", repo, err)
+			return nil, err
+		}
 
-	return issueResult, nil
+		for _, issue := range issueResult.Issues {
+			a = append(a, issue)
+		}
+		count++
+	}
+	log.Printf("Total #issues with release-note label: %v.", numIssues)
+
+	return m, nil
 }
