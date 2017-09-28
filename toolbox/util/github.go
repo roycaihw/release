@@ -143,7 +143,6 @@ func FetchAllIssues(owner string, repo string, githubToken string, sort string, 
 	tc := oauth2.NewClient(ctx, ts)
 	g := github.NewClient(tc)
 
-	q := strings.Join(queries, " ")
 	numPerPage := 100
 	listOption := &github.ListOptions{
 		Page:    1,
@@ -161,21 +160,22 @@ func FetchAllIssues(owner string, repo string, githubToken string, sort string, 
 	}
 	numPages := response.LastPage
 	count := response.FirstPage - 1
+	log.Printf("Starting to fetch... First page: %v... Lotal page: %v", response.FirstPage, response.LastPage)
 	for count < numPages {
 		listOption.Page = count + 1
 		options.ListOptions = *listOption
+		log.Printf("Fetching page %v", listOption.Page)
 		issueResult, _, err := g.Issues.ListByRepo(context.Background(), owner, repo, options)
 		if err != nil {
 			log.Printf("Failed to fetch Issues from %s: %s", repo, err)
 			return nil, err
 		}
 
-		for _, issue := range issueResult.Issues {
+		for _, issue := range issueResult {
 			a = append(a, issue)
 		}
 		count++
 	}
-	log.Printf("Total #issues with release-note label: %v.", numIssues)
 
-	return m, nil
+	return a, nil
 }
