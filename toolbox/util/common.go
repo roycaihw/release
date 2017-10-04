@@ -15,33 +15,15 @@
 package util
 
 import (
-	"fmt"
-	"log"
 	"os/exec"
-	"strings"
 )
 
-// RunShell runs the input command and returns the result as string
-func RunShell(command string) (string, error) {
-	parts := strings.Split(command, " ")
-	c := exec.Command(parts[0], parts[1:]...)
+// Shell runs a command and returns the result as a string.
+func Shell(name string, arg ...string) (string, error) {
+	c := exec.Command(name, arg...)
 	bytes, err := c.CombinedOutput()
 	if err != nil {
-		return "", fmt.Errorf("command failed: %q %v", string(bytes), err)
+		return "", err
 	}
 	return string(bytes), nil
-}
-
-func addQuery(queries []string, queryParts ...string) []string {
-	if len(queryParts) < 2 {
-		log.Printf("Not enough to form a query: %v", queryParts)
-		return queries
-	}
-	for _, part := range queryParts {
-		if part == "" {
-			return queries
-		}
-	}
-
-	return append(queries, fmt.Sprintf("%s:%s", queryParts[0], strings.Join(queryParts[1:], "")))
 }

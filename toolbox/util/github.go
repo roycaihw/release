@@ -16,166 +16,200 @@ package util
 
 import (
 	"context"
-	"log"
 	"regexp"
-	"strconv"
 	"strings"
+	"time"
+
+	"golang.org/x/oauth2"
 
 	"github.com/google/go-github/github"
-	"golang.org/x/oauth2"
 )
 
 const (
-	// K8SGithubRawOrg is the url prefix for getting raw github user content
-	K8SGithubRawOrg = "https://raw.githubusercontent.com/kubernetes"
+	// GithubRawURL is the url prefix for getting raw github user content.
+	GithubRawURL = "https://raw.githubusercontent.com/"
 )
 
-// LastRelease looks up the list of releases on github and puts the last release per branch
-// into a branch-indexed dictionary
-func LastRelease(owner string, repo string, githubToken string) (map[string]string, error) {
-	r := make(map[string]string)
-
+// NewClient sets up a new github client with input assess token.
+func NewClient(githubToken string) *github.Client {
 	ctx := context.Background()
 	ts := oauth2.StaticTokenSource(
 		&oauth2.Token{AccessToken: githubToken},
 	)
 	tc := oauth2.NewClient(ctx, ts)
-	g := github.NewClient(tc)
-	// TODO: using default #pages and per page options
-	repoRelease, _, err := g.Repositories.ListReleases(context.Background(), owner, repo, &github.ListOptions{})
+
+	return github.NewClient(tc)
+}
+
+// LastReleases looks up the list of releases on github and puts the last release per branch
+// into a branch-indexed dictionary.
+func LastReleases(c *github.Client, owner, repo string) (map[string]string, error) {
+	lastRelease := make(map[string]string)
+
+	r, err := ListAllReleases(c, owner, repo)
 	if err != nil {
 		return nil, err
 	}
-	for _, release := range repoRelease {
-		// Skip draft releases (TODO: no-auth clienct cannot fetch draft releases)
+
+	for _, release := range r {
+		// Skip draft releases
 		if *release.Draft {
 			continue
 		}
-		// Alpha releases only on master branch
-		if strings.Contains(*release.Name, "-alpha") && r["master"] == "" {
-			r["master"] = *release.Name
+		// Alpha release goes only on master branch
+		if strings.Contains(*release.TagName, "-alpha") && lastRelease["master"] == "" {
+			lastRelease["master"] = *release.TagName
 		} else {
-			v, err := regexp.Compile("v([0-9]+\\.[0-9]+)\\.([0-9]+(-.+)?)")
-			if err != nil {
-				return nil, err
-			}
-			version := v.FindStringSubmatch(*release.Name)
+			re, _ := regexp.Compile("v([0-9]+\\.[0-9]+)\\.([0-9]+(-.+)?)")
+			version := re.FindStringSubmatch(*release.TagName)
+
 			if version != nil {
-				// Lastest vx.x.0 release goes on both master and release branch
-				if version[2] == "0" && r["master"] == "" {
-					r["master"] = version[0]
-				}
-				branchName := "release-" + version[1]
-				if r[branchName] == "" {
-					r[branchName] = version[0]
+				// Lastest vx.y.0 release goes on both master and release-vx.y branch
+				if version[2] == "0" && lastRelease["master"] == "" {
+					lastRelease["master"] = *release.TagName
 				}
 
+				branchName := "release-" + version[1]
+				if lastRelease[branchName] == "" {
+					lastRelease[branchName] = *release.TagName
+				}
 			}
 		}
 	}
-	return r, nil
+
+	return lastRelease, nil
 }
 
-// FetchPRByLabel gets PR from specified repo with input label
-// NOTE: Github Search API only allows fetching the first 1000 results, therefore the max #PR returned from this method is 1000.
-func FetchPRByLabel(label string, org string, repo string, githubToken string, sort string, order string) (map[string]bool, error) {
-	m := make(map[string]bool)
-	var queries []string
-
-	queries = addQuery(queries, "repo", org, "/", repo)
-	queries = addQuery(queries, "label", label)
-	queries = addQuery(queries, "is", "merged")
-	queries = addQuery(queries, "type", "pr")
-	log.Printf("My Query: %s", queries)
-
-	ctx := context.Background()
-	ts := oauth2.StaticTokenSource(
-		&oauth2.Token{AccessToken: githubToken},
-	)
-	tc := oauth2.NewClient(ctx, ts)
-	g := github.NewClient(tc)
-
-	q := strings.Join(queries, " ")
-	numPerPage := 100
-	listOption := &github.ListOptions{
+// ListAllReleases lists all releases for given owner and repo.
+func ListAllReleases(c *github.Client, owner, repo string) ([]*github.RepositoryRelease, error) {
+	lo := &github.ListOptions{
 		Page:    1,
-		PerPage: numPerPage,
+		PerPage: 100,
 	}
-	searchOption := &github.SearchOptions{
-		Sort:        sort,
-		Order:       order,
-		ListOptions: *listOption,
-	}
-	prResult, _, err := g.Search.Issues(context.Background(), q, searchOption)
+
+	releases, resp, err := c.Repositories.ListReleases(context.Background(), owner, repo, lo)
 	if err != nil {
-		log.Printf("Failed to fetch PR with release note for %s: %s", repo, err)
 		return nil, err
 	}
-	numPRs := *prResult.Total
-	count := 0
-	for count*numPerPage < numPRs && count*numPerPage < 1000 {
-		listOption.Page = count + 1
-		searchOption.ListOptions = *listOption
-		prResult, _, err = g.Search.Issues(context.Background(), q, searchOption)
+	lo.Page++
+
+	for lo.Page <= resp.LastPage {
+		re, _, err := c.Repositories.ListReleases(context.Background(), owner, repo, lo)
 		if err != nil {
-			log.Printf("Failed to fetch PR with release note for %s: %s", repo, err)
 			return nil, err
 		}
-
-		for _, pr := range prResult.Issues {
-			m[strconv.Itoa(*pr.Number)] = true
+		for _, r := range re {
+			releases = append(releases, r)
 		}
-		count++
+		lo.Page++
 	}
-	log.Printf("Total #prs with release-note label: %v.", numPRs)
-
-	return m, nil
+	return releases, nil
 }
 
-// FetchAllIssues gets all the Issues from a specified repo
-func FetchAllIssues(owner string, repo string, githubToken string, sort string, order string) ([]*github.Issue, error) {
-	a := make([]*github.Issue, 0)
-
-	ctx := context.Background()
-	ts := oauth2.StaticTokenSource(
-		&oauth2.Token{AccessToken: githubToken},
-	)
-	tc := oauth2.NewClient(ctx, ts)
-	g := github.NewClient(tc)
-
-	numPerPage := 100
-	listOption := &github.ListOptions{
+// ListAllIssues lists all issues and PRs for given owner and repo.
+func ListAllIssues(c *github.Client, owner, repo string) ([]*github.Issue, error) {
+	lo := &github.ListOptions{
 		Page:    1,
-		PerPage: numPerPage,
+		PerPage: 100,
 	}
-	options := &github.IssueListByRepoOptions{
-		Sort:        sort,
-		Direction:   order,
-		ListOptions: *listOption,
+	ilo := &github.IssueListByRepoOptions{
+		State:       "all",
+		ListOptions: *lo,
 	}
-	_, response, err := g.Issues.ListByRepo(context.Background(), owner, repo, options)
+
+	issues, resp, err := c.Issues.ListByRepo(context.Background(), owner, repo, ilo)
 	if err != nil {
-		log.Printf("Failed to get response from github: %s", err)
 		return nil, err
 	}
-	numPages := response.LastPage
-	count := response.FirstPage - 1
-	log.Printf("Starting to fetch... First page: %v... Lotal page: %v", response.FirstPage, response.LastPage)
-	for count < numPages {
-		listOption.Page = count + 1
-		options.ListOptions = *listOption
-		log.Printf("Fetching page %v", listOption.Page)
-		issueResult, _, err := g.Issues.ListByRepo(context.Background(), owner, repo, options)
+	ilo.ListOptions.Page++
+
+	for ilo.ListOptions.Page <= resp.LastPage {
+		is, _, err := c.Issues.ListByRepo(context.Background(), owner, repo, ilo)
 		if err != nil {
-			log.Printf("Failed to fetch Issues from %s: %s", repo, err)
 			return nil, err
 		}
-
-		for _, issue := range issueResult {
-			a = append(a, issue)
+		for _, i := range is {
+			issues = append(issues, i)
 		}
-		count++
+		ilo.ListOptions.Page++
+	}
+	return issues, nil
+}
+
+// ListAllTags lists all tags for given owner and repo.
+func ListAllTags(c *github.Client, owner, repo string) ([]*github.RepositoryTag, error) {
+	lo := &github.ListOptions{
+		Page:    1,
+		PerPage: 100,
 	}
 
-	return a, nil
+	tags, resp, err := c.Repositories.ListTags(context.Background(), owner, repo, lo)
+	if err != nil {
+		return nil, err
+	}
+	lo.Page++
+
+	for lo.Page <= resp.LastPage {
+		ta, _, err := c.Repositories.ListTags(context.Background(), owner, repo, lo)
+		if err != nil {
+			return nil, err
+		}
+		for _, t := range ta {
+			tags = append(tags, t)
+		}
+		lo.Page++
+	}
+	return tags, nil
+}
+
+// ListAllCommits lists all commits for given owner, repo, branch and time range.
+func ListAllCommits(c *github.Client, owner, repo, branch string, start, end time.Time) ([]*github.RepositoryCommit, error) {
+	lo := &github.ListOptions{
+		Page:    1,
+		PerPage: 100,
+	}
+
+	clo := &github.CommitsListOptions{
+		SHA:         branch,
+		Since:       start,
+		Until:       end,
+		ListOptions: *lo,
+	}
+
+	commits, resp, err := c.Repositories.ListCommits(context.Background(), owner, repo, clo)
+	if err != nil {
+		return nil, err
+	}
+	clo.ListOptions.Page++
+
+	for clo.ListOptions.Page <= resp.LastPage {
+		co, _, err := c.Repositories.ListCommits(context.Background(), owner, repo, clo)
+		if err != nil {
+			return nil, err
+		}
+		for _, commit := range co {
+			commits = append(commits, commit)
+		}
+		clo.ListOptions.Page++
+	}
+	return commits, nil
+}
+
+// GetCommitDate gets commit time for given tag/commit, provided with repository tags and commits.
+// The function returns ok as false if input tag/commit cannot be found in the repository.
+func GetCommitDate(tagCommit string, tags []*github.RepositoryTag, commits []*github.RepositoryCommit) (date time.Time, ok bool) {
+	// If input string is a tag, convert it into SHA
+	for _, t := range tags {
+		if tagCommit == *t.Name {
+			tagCommit = *t.Commit.SHA
+			break
+		}
+	}
+	for _, c := range commits {
+		if tagCommit == *c.SHA {
+			return *c.Commit.Committer.Date, true
+		}
+	}
+
+	return time.Time{}, false
 }
