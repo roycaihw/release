@@ -213,3 +213,14 @@ func GetCommitDate(tagCommit string, tags []*github.RepositoryTag, commits []*gi
 
 	return time.Time{}, false
 }
+
+// HasLabel checks if input github issue contains input label.
+func HasLabel(i *github.Issue, label string) bool {
+	for _, l := range i.Labels {
+		if *l.Name == label {
+			return true
+		}
+	}
+
+	return false
+}

@@ -76,7 +76,7 @@ func TestListAllTags(t *testing.T) {
 		numTags int
 	}{
 		{"kubernetes", "kubernetes", 295},
-		{"kubernetes", "helm", 34},
+		{"kubernetes", "helm", 35},
 		{"roycaihw", "kubernetes", 267},
 	}
 
@@ -133,6 +133,7 @@ func TestListAllCommits(t *testing.T) {
 		numCommits int
 	}{
 		{"kubernetes", "features", "58315cc33c51f8f4d05364d80f0b66f5d980bad7", time.Time{}, time.Time{}, 705},
+		{"kubernetes", "features", "", time.Time{}, time.Time{}, 705},
 		{"kubernetes", "helm", "release-v1.2.1", time.Time{}, time.Time{}, 373},
 		{"kubernetes", "kubectl", "master", time.Time{}, time.Time{}, 9},
 		{"kubernetes", "kubectl", "master", ts, te, 7},
