@@ -15,6 +15,10 @@
 package util
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"io"
+	"os"
 	"os/exec"
 )
 
@@ -22,8 +26,20 @@ import (
 func Shell(name string, arg ...string) (string, error) {
 	c := exec.Command(name, arg...)
 	bytes, err := c.CombinedOutput()
+	return string(bytes), err
+}
+
+// GetSha256 calculates SHA256 for input file.
+func GetSha256(filename string) (string, error) {
+	f, err := os.Open(filename)
 	if err != nil {
 		return "", err
 	}
-	return string(bytes), nil
+	defer f.Close()
+
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
 }

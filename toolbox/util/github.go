@@ -16,6 +16,8 @@ package util
 
 import (
 	"context"
+	"fmt"
+	"log"
 	"regexp"
 	"strings"
 	"time"
@@ -223,4 +225,54 @@ func HasLabel(i *github.Issue, label string) bool {
 	}
 
 	return false
+}
+
+// SearchIssues gets all issues matching search query.
+// NOTE: Github Search API has tight rate limit. For large search request, use ListAllIssues instead.
+func SearchIssues(c *github.Client, query string) ([]github.Issue, error) {
+	lo := &github.ListOptions{
+		Page:    1,
+		PerPage: 100,
+	}
+
+	so := &github.SearchOptions{
+		ListOptions: *lo,
+	}
+
+	issues := make([]github.Issue, 0)
+	result, resp, err := c.Search.Issues(context.Background(), query, so)
+	if err != nil {
+		return nil, err
+	}
+	for _, i := range result.Issues {
+		issues = append(issues, i)
+	}
+	so.ListOptions.Page++
+
+	for so.ListOptions.Page <= resp.LastPage {
+		result, _, err = c.Search.Issues(context.Background(), query, so)
+		if err != nil {
+			return nil, err
+		}
+		for _, i := range result.Issues {
+			issues = append(issues, i)
+		}
+		so.ListOptions.Page++
+	}
+	return issues, nil
+}
+
+// AddQuery forms a Github query by appending new query parts to input query
+func AddQuery(query []string, queryParts ...string) []string {
+	if len(queryParts) < 2 {
+		log.Printf("not enough parts to form a query: %v", queryParts)
+		return query
+	}
+	for _, part := range queryParts {
+		if part == "" {
+			return query
+		}
+	}
+
+	return append(query, fmt.Sprintf("%s:%s", queryParts[0], strings.Join(queryParts[1:], "")))
 }

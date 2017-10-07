@@ -2,6 +2,7 @@ package util
 
 import (
 	"os"
+	"strings"
 	"testing"
 	"time"
 )
@@ -176,6 +177,43 @@ func TestGetCommitDate(t *testing.T) {
 		}
 		if table.exist && table.date != d.String() {
 			t.Errorf("%v: Date was incorrect, want: %v, got: %v", table.tagCommit, table.date, d.String())
+		}
+	}
+}
+
+func TestAddQuerySearchIssues(t *testing.T) {
+	tables := []struct {
+		q   map[string]string
+		num int
+	}{
+		{map[string]string{
+			"repo": "kubernetes/kubernetes",
+			"is":   "open",
+			"type": "pr",
+			"base": "release-1.7",
+		}, 8},
+		{map[string]string{
+			"repo": "kubernetes/kubernetes",
+			"is":   "open",
+			"type": "pr",
+			"base": "release-1.5",
+		}, 4},
+	}
+
+	githubToken := os.Getenv("GITHUB_TOKEN")
+	c := NewClient(githubToken)
+
+	for _, table := range tables {
+		var query []string
+		for k, v := range table.q {
+			query = AddQuery(query, k, v)
+		}
+		result, err := SearchIssues(c, strings.Join(query, " "))
+		if err != nil {
+			t.Errorf("Unexpected error: %s", err)
+		}
+		if len(result) != table.num {
+			t.Errorf("Result number was incorrect, want: %d, got %d", table.num, len(result))
 		}
 	}
 }
