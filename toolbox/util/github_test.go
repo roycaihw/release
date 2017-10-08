@@ -156,22 +156,23 @@ func TestListAllCommits(t *testing.T) {
 
 func TestGetCommitDate(t *testing.T) {
 	tables := []struct {
+		owner     string
+		repo      string
 		tagCommit string
 		date      string
 		exist     bool
 	}{
-		{"v2.6.0", "2017-08-16 18:56:09 +0000 UTC", true},
-		{"018ef2426f4932b2d8b9a772176acb548810a222", "2017-10-03 05:14:25 +0000 UTC", true},
-		{"018ef2426f4932b2d8b9a772176acb548810a221", "", false},
+		{"kubernetes", "helm", "v2.6.0", "2017-08-16 18:56:09 +0000 UTC", true},
+		{"kubernetes", "helm", "018ef2426f4932b2d8b9a772176acb548810a222", "2017-10-03 05:14:25 +0000 UTC", true},
+		{"kubernetes", "helm", "018ef2426f4932b2d8b9a772176acb548810a221", "", false},
 	}
 
 	githubToken := os.Getenv("GITHUB_TOKEN")
 	c := NewClient(githubToken)
 	tags, _ := ListAllTags(c, "kubernetes", "helm")
-	commits, _ := ListAllCommits(c, "kubernetes", "helm", "master", time.Time{}, time.Time{})
 
 	for _, table := range tables {
-		d, ok := GetCommitDate(table.tagCommit, tags, commits)
+		d, ok := GetCommitDate(c, table.owner, table.repo, table.tagCommit, tags)
 		if table.exist != ok {
 			t.Errorf("%v: Existence check failed, want: %v, got: %v", table.tagCommit, table.exist, ok)
 		}

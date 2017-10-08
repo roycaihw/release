@@ -48,6 +48,9 @@ var (
 	releaseBucket = flag.String("release-bucket", "kubernetes-release", "Specify gs bucket to point to in generated notes (informational only)")
 	releaseTars   = flag.String("release-tars", "", "Directory of tars to sha256 sum for display")
 	repo          = flag.String("repo", "kubernetes", "Github repository")
+
+	// Global
+	branchHead = ""
 )
 
 func main() {
@@ -66,6 +69,11 @@ func main() {
 			log.Printf("not a git repository: %s", err)
 			return
 		}
+	}
+
+	prFileName := "/tmp/release-notes-" + *branch + "prnotes"
+	if *mdFileName == "" {
+		*mdFileName = "/tmp/release-notes-" + *branch + ".md"
 	}
 
 	// If githubToken isn't specified in flag, use the GITHUB_TOKEN environment variable
@@ -110,7 +118,6 @@ func main() {
 	// Generating release note...
 	log.Printf("Generating release notes...")
 
-	prFileName := "./testfile.md"
 	prFile, err := os.Create(prFileName)
 	if err != nil {
 		log.Printf("failed to create release note file %s: %s", prFileName, err)
@@ -130,7 +137,7 @@ func main() {
 
 	// Start generating markdown file
 	log.Printf("Preparing layout...")
-	*mdFileName = "./testmdfile.md"
+
 	mdFile, err := os.Create(*mdFileName)
 	if err != nil {
 		log.Printf("failed to create release note markdown file %s: %s", *mdFileName, err)
@@ -140,7 +147,7 @@ func main() {
 	// Create markdown file body with hardcoded kubernetes URLs
 	docURL := "https://docs.k8s.io"
 	exampleURL := "https://releases.k8s.io/" + *branch + "/examples"
-	createBody(mdFile, releaseTag, *branch, docURL, exampleURL, *releaseTars)
+	createBody(client, mdFile, releaseTag, *branch, docURL, exampleURL, *releaseTars)
 
 	// Copy (append) the pull request notes into the output markdown file
 	prFile, _ = os.Open(prFileName)
@@ -203,7 +210,7 @@ func main() {
 // getPendingPRs gets pending PRs on given branch in the repo.
 func getPendingPRs(c *github.Client, f *os.File, owner, repo, branch string) error {
 	log.Printf("Adding pending PR status...")
-	f.WriteString("--------\n")
+	f.WriteString("-------\n")
 	f.WriteString(fmt.Sprintf("## PENDING PRs on the %s branch\n", branch))
 
 	if *htmlizeMD {
@@ -230,9 +237,9 @@ func getPendingPRs(c *github.Client, f *os.File, owner, repo, branch string) err
 			milestone = *pr.Milestone.Title
 		}
 		if *htmlizeMD {
-			str = fmt.Sprintf("#%-8d | %-4s | @%-10s | (date: %s) | %s\n", *pr.Number, milestone, *pr.User.Login, pr.UpdatedAt.String(), msg)
+			str = fmt.Sprintf("#%-8d | %-4s | @%-10s| %s   | %s\n", *pr.Number, milestone, *pr.User.Login, pr.UpdatedAt.Format("Mon Jan  2 15:04:05 MST 2006"), msg)
 		} else {
-			str = fmt.Sprintf("#%-8d  %-4s  @%-10s  (date: %s)  %s\n", *pr.Number, milestone, *pr.User.Login, pr.UpdatedAt.String(), msg)
+			str = fmt.Sprintf("#%-8d  %-4s  @%-10s %s    %s\n", *pr.Number, milestone, *pr.User.Login, pr.UpdatedAt.Format("Mon Jan  2 15:04:05 MST 2006"), msg)
 		}
 		f.WriteString(str)
 	}
@@ -306,6 +313,7 @@ func getCIJobStatus(outputFile, branch string, htmlize bool) error {
 
 	f.WriteString(fmt.Sprintf("## State of %s branch\n", branch))
 
+	// Call script find_green_build to get CI job status
 	content, err := u.Shell(os.Getenv("GOPATH")+"/src/k8s.io/release/find_green_build", "-v", extraFlag, branch)
 	if err == nil {
 		f.WriteString(fmt.Sprintf("%sGOOD TO GO!%s\n\n", green, off))
@@ -323,19 +331,20 @@ func getCIJobStatus(outputFile, branch string, htmlize bool) error {
 
 // createBody creates the general documentation, example and downloads table body for the
 // markdown file.
-func createBody(f *os.File, releaseTag, branch, docURL, exampleURL, releaseTars string) {
+func createBody(c *github.Client, f *os.File, releaseTag, branch, docURL, exampleURL, releaseTars string) {
 	var title string
 	if *preview {
 		title = "Branch "
 	}
-	if releaseTag == "HEAD" {
+
+	if releaseTag == "HEAD" || releaseTag == branchHead {
 		title += branch
 	} else {
 		title += releaseTag
 	}
 
 	if *preview {
-		f.WriteString("**Release Note Preview - generated on " + time.Now().String() + "**\n")
+		f.WriteString("**Release Note Preview - generated on " + time.Now().Format("Mon Jan  2 15:04:05 MST 2006") + "**\n")
 	}
 
 	f.WriteString("\n# " + title + "\n\n")
@@ -347,6 +356,7 @@ func createBody(f *os.File, releaseTag, branch, docURL, exampleURL, releaseTars 
 		createDownloadsTable(f, releaseTag, "Client Binaries", releaseTars+"/kubernetes-client*.tar.gz")
 		createDownloadsTable(f, releaseTag, "Server Binaries", releaseTars+"/kubernetes-server*.tar.gz")
 		createDownloadsTable(f, releaseTag, "Node Binaries", releaseTars+"/kubernetes-node*.tar.gz")
+		f.WriteString("\n")
 	}
 }
 
@@ -436,6 +446,7 @@ func minorRelease(f *os.File, release, draftURL, changelogURL string) {
 				f.WriteString(line + "\n")
 			}
 		}
+		f.WriteString("\n")
 	}
 
 }
@@ -483,7 +494,7 @@ func determineRange(c *github.Client, owner, repo, branch, branchRange string) (
 	if err != nil {
 		return "", "", err
 	}
-	branchHead := *b.Commit.SHA
+	branchHead = *b.Commit.SHA
 
 	lastRelease, err := u.LastReleases(c, owner, repo)
 	if err != nil {
@@ -534,18 +545,12 @@ func getReleaseCommits(c *github.Client, owner, repo, branch, branchRange string
 		return nil, "", "", fmt.Errorf("failed to fetch repo tags: %s", err)
 	}
 
-	// Get all commits on the branch
-	commits, err := u.ListAllCommits(c, owner, repo, branch, time.Time{}, time.Time{})
-	if err != nil {
-		return nil, "", "", fmt.Errorf("failed to fetch all repo commits: %s", err)
-	}
-
 	// Get commits for specified branch and range
-	tStart, ok := u.GetCommitDate(startTag, tags, commits)
+	tStart, ok := u.GetCommitDate(c, owner, repo, startTag, tags)
 	if ok != true {
 		return nil, "", "", fmt.Errorf("failed to get start commit date: %s", startTag)
 	}
-	tEnd, ok := u.GetCommitDate(releaseTag, tags, commits)
+	tEnd, ok := u.GetCommitDate(c, owner, repo, releaseTag, tags)
 	if ok != true {
 		return nil, "", "", fmt.Errorf("failed to get release commit date: %s", releaseTag)
 	}
@@ -562,24 +567,38 @@ func getReleaseCommits(c *github.Client, owner, repo, branch, branchRange string
 // well as cherry picks.
 func parsePRFromCommit(commits []*github.RepositoryCommit) ([]int, error) {
 	prs := make([]int, 0)
+	prsMap := make(map[int]bool)
 
-	reCherry, _ := regexp.Compile("automated-cherry-pick-of-#([0-9]+)-{1,}")
+	reCherry, _ := regexp.Compile("automated-cherry-pick-of-(#[0-9]+-){1,}")
+	reCherryID, _ := regexp.Compile("#([0-9]+)-")
 	reMerge, _ := regexp.Compile("^Merge pull request #([0-9]+) from")
 
 	for _, c := range commits {
+		// Deref all PRs back to master
 		// Match cherry pick PRs first and then normal pull requests
-		if pr := reCherry.FindStringSubmatch(*c.Commit.Message); pr != nil {
-			id, err := strconv.Atoi(pr[1])
-			if err != nil {
-				return nil, err
+		// Paying special attention to automated cherrypicks that could have multiple
+		// sources
+		if cpStr := reCherry.FindStringSubmatch(*c.Commit.Message); cpStr != nil {
+			cpPRs := reCherryID.FindAllStringSubmatch(cpStr[0], -1)
+			for _, pr := range cpPRs {
+				id, err := strconv.Atoi(pr[1])
+				if err != nil {
+					return nil, err
+				}
+				if prsMap[id] == false {
+					prs = append(prs, id)
+					prsMap[id] = true
+				}
 			}
-			prs = append(prs, id)
 		} else if pr := reMerge.FindStringSubmatch(*c.Commit.Message); pr != nil {
 			id, err := strconv.Atoi(pr[1])
 			if err != nil {
 				return nil, err
 			}
-			prs = append(prs, id)
+			if prsMap[id] == false {
+				prs = append(prs, id)
+				prsMap[id] = true
+			}
 		}
 	}
 

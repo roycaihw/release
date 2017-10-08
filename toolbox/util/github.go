@@ -199,7 +199,7 @@ func ListAllCommits(c *github.Client, owner, repo, branch string, start, end tim
 
 // GetCommitDate gets commit time for given tag/commit, provided with repository tags and commits.
 // The function returns ok as false if input tag/commit cannot be found in the repository.
-func GetCommitDate(tagCommit string, tags []*github.RepositoryTag, commits []*github.RepositoryCommit) (date time.Time, ok bool) {
+func GetCommitDate(c *github.Client, owner, repo, tagCommit string, tags []*github.RepositoryTag) (date time.Time, ok bool) {
 	// If input string is a tag, convert it into SHA
 	for _, t := range tags {
 		if tagCommit == *t.Name {
@@ -207,13 +207,11 @@ func GetCommitDate(tagCommit string, tags []*github.RepositoryTag, commits []*gi
 			break
 		}
 	}
-	for _, c := range commits {
-		if tagCommit == *c.SHA {
-			return *c.Commit.Committer.Date, true
-		}
+	commit, _, err := c.Git.GetCommit(context.Background(), owner, repo, tagCommit)
+	if err != nil {
+		return time.Time{}, false
 	}
-
-	return time.Time{}, false
+	return *commit.Committer.Date, true
 }
 
 // HasLabel checks if input github issue contains input label.
