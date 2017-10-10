@@ -31,14 +31,21 @@ func GetCurrentBranch() (string, error) {
 	return branch, nil
 }
 
-// IsVer checks if input version number matches input version type among: "release", "dotzero" and
-// "build". The function returns true if the version number matches the version type; returns false
+// IsVer checks if input version number matches input version type among: "dotzero"
+// The function returns true if the version number matches the version type; returns false
 // otherwise.
 func IsVer(version string, t string) bool {
 	m := make(map[string]string)
-	m["release"] = "v(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-[a-zA-Z0-9]+)*\\.*(0|[1-9][0-9]*)?"
+	// Regexp Example:
+	// This regexp matches
+	//     "v1.5.0"
+	//     "v2.3.0"
+	//
+	// Doesn't match
+	//     "v1.5.00"
+	//     "v1.5.1"
+	//     "v2.0"
 	m["dotzero"] = "v(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.0$"
-	m["build"] = "([0-9]{1,})\\+([0-9a-f]{5,40})"
 
 	re, _ := regexp.Compile(m[t])
 	return re.MatchString(version)

@@ -34,11 +34,17 @@ import (
 	u "k8s.io/release/toolbox/util"
 )
 
+const (
+	k8sReleaseURLPrefix = "https://dl.k8s.io"
+)
+
 var (
 	// Flags
 	// TODO: golang flags and parameters syntex
-	branch = flag.String("branch", "", "Specify a branch other than the current one")
-	full   = flag.Bool("full", false, "Force 'full' release format to show all sections of release notes. "+
+	branch           = flag.String("branch", "", "Specify a branch other than the current one")
+	documentURL      = flag.String("doc-url", "https://docs.k8s.io", "Documentation URL displayed in release notes")
+	exampleURLPrefix = flag.String("example-url-prefix", "https://releases.k8s.io/", "Example URL prefix displayed in release notes")
+	full             = flag.Bool("full", false, "Force 'full' release format to show all sections of release notes. "+
 		"(This is the *default* for new branch X.Y.0 notes)")
 	githubToken   = flag.String("github-token", "", "Must be specified, or set the GITHUB_TOKEN environment variable")
 	htmlFileName  = flag.String("html-file", "", "Produce a html version of the notes")
@@ -70,13 +76,13 @@ func main() {
 		*branch, err = u.GetCurrentBranch()
 		if err != nil {
 			log.Printf("not a git repository: %s", err)
-			return
+			os.Exit(1)
 		}
 	}
 
-	prFileName := "/tmp/release-notes-" + *branch + "prnotes"
+	prFileName := fmt.Sprintf("/tmp/release-notes-%s-prnotes", *branch)
 	if *mdFileName == "" {
-		*mdFileName = "/tmp/release-notes-" + *branch + ".md"
+		*mdFileName = fmt.Sprintf("/tmp/release-notes-%s.md", *branch)
 	}
 	log.Printf("Output markdown file path: %s", *mdFileName)
 	if *htmlFileName != "" {
@@ -94,21 +100,21 @@ func main() {
 	releaseCommits, startTag, releaseTag, err := getReleaseCommits(client, *owner, *repo, *branch, branchRange)
 	if err != nil {
 		log.Printf("failed to get release commits for %s: %s", branchRange, err)
-		return
+		os.Exit(1)
 	}
 
 	// Parse release related PR ids from the release commits
 	commitPRs, err := parsePRFromCommit(releaseCommits)
 	if err != nil {
 		log.Printf("failed to parse release commits: %s", err)
-		return
+		os.Exit(1)
 	}
 
 	// Get number-issue mapping for issues in the repository
 	issues, err := u.ListAllIssues(client, *owner, *repo)
 	if err != nil {
 		log.Printf("failed to list all issues from %s: %s", *repo, err)
-		return
+		os.Exit(1)
 	}
 	issueMap := make(map[int]*github.Issue)
 	for _, i := range issues {
@@ -129,13 +135,13 @@ func main() {
 	prFile, err := os.Create(prFileName)
 	if err != nil {
 		log.Printf("failed to create release note file %s: %s", prFileName, err)
-		return
+		os.Exit(1)
 	}
 
 	// Bootstrap notes for minor (new branch) releases
 	if *full || u.IsVer(releaseTag, "dotzero") {
-		draftURL := u.GithubRawURL + *owner + "/features/master/" + *branch + "/release-notes-draft.md"
-		changelogURL := u.GithubRawURL + *owner + "/" + *repo + "/master/CHANGELOG.md"
+		draftURL := fmt.Sprintf("%s%s/features/master/%s/release-notes-draft.md", u.GithubRawURL, *owner, *branch)
+		changelogURL := fmt.Sprintf("%s%s/%s/master/CHANGELOG.md", u.GithubRawURL, *owner, *repo)
 		minorRelease(prFile, releaseTag, draftURL, changelogURL)
 	} else {
 		patchRelease(prFile, startTag, releasePRs, issueMap)
@@ -149,13 +155,12 @@ func main() {
 	mdFile, err := os.Create(*mdFileName)
 	if err != nil {
 		log.Printf("failed to create release note markdown file %s: %s", *mdFileName, err)
-		return
+		os.Exit(1)
 	}
 
-	// Create markdown file body with hardcoded kubernetes URLs
-	docURL := "https://docs.k8s.io"
-	exampleURL := "https://releases.k8s.io/" + *branch + "/examples"
-	createBody(client, mdFile, releaseTag, *branch, docURL, exampleURL, *releaseTars)
+	// Create markdown file body with documentation and example URLs from program flags
+	exampleURL := fmt.Sprintf("%s%s/examples", *exampleURLPrefix, *branch)
+	createBody(client, mdFile, releaseTag, *branch, *documentURL, exampleURL, *releaseTars)
 
 	// Copy (append) the pull request notes into the output markdown file
 	prFile, _ = os.Open(prFileName)
@@ -175,7 +180,7 @@ func main() {
 		err = getPendingPRs(client, mdFile, *owner, *repo, *branch)
 		if err != nil {
 			log.Printf("failed to get pending PRs: %s", err)
-			return
+			os.Exit(1)
 		}
 	}
 	mdFile.Close()
@@ -183,25 +188,29 @@ func main() {
 	if *htmlizeMD {
 		// Make users and PRs linkable
 		// Also, expand anchors (needed for email announce())
-		k8sGithubURL := "https://github.com/kubernetes/kubernetes"
-		_, err = u.Shell("sed", "-i", "-e", "s,#\\([0-9]\\{5\\,\\}\\),[#\\1]("+k8sGithubURL+"/pull/\\1),g",
-			"-e", "s,\\(#v[0-9]\\{3\\}-\\),"+k8sGithubURL+"/blob/master/CHANGELOG.md\\1,g",
+		projectGithubURL := fmt.Sprintf("https://github.com/%s/%s", *owner, *repo)
+		_, err = u.Shell("sed", "-i", "-e", "s,#\\([0-9]\\{5\\,\\}\\),[#\\1]("+projectGithubURL+"/pull/\\1),g",
+			"-e", "s,\\(#v[0-9]\\{3\\}-\\),"+projectGithubURL+"/blob/master/CHANGELOG.md\\1,g",
 			"-e", "s,@\\([a-zA-Z0-9-]*\\),[@\\1](https://github.com/\\1),g", *mdFileName)
 
 		if err != nil {
 			log.Printf("failed to htmlize markdown file: %s", err)
-			return
+			os.Exit(1)
 		}
 	}
 
-	if *preview {
+	if *preview && *owner == "kubernetes" && *repo == "kubernetes" {
 		// If in preview mode, get the current CI job status
 		// We do this after htmlizing because we don't want to update the
 		// issues in the block of this section
+		//
+		// NOTE: this function is Kubernetes-specified and runs the find_green_build script under
+		// kubernetes/release. Make sure you have the dependencies installed for find_green_build
+		// before running this function.
 		err = getCIJobStatus(*mdFileName, *branch, *htmlizeMD)
 		if err != nil {
 			log.Printf("failed to get CI status: %s", err)
-			return
+			os.Exit(1)
 		}
 	}
 
@@ -221,14 +230,14 @@ func main() {
 		fmt.Print(string(dat))
 	}
 
-	log.Printf("Program finished... Total running time: %s", time.Now().Round(time.Second).Sub(startingTime).String())
+	log.Printf("Successfully generated release note. Total running time: %s", time.Now().Round(time.Second).Sub(startingTime).String())
 
 	return
 }
 
 // getPendingPRs gets pending PRs on given branch in the repo.
 func getPendingPRs(c *github.Client, f *os.File, owner, repo, branch string) error {
-	log.Printf("Adding pending PR status...")
+	log.Printf("Getting pending PR status...")
 	f.WriteString("-------\n")
 	f.WriteString(fmt.Sprintf("## PENDING PRs on the %s branch\n", branch))
 
@@ -297,8 +306,11 @@ func createHTMLNote(htmlFileName, mdFileName string) error {
 }
 
 // getCIJobStatus runs the script find_green_build and append CI job status to outputFile.
+// NOTE: this function is Kubernetes-specified and runs the find_green_build script under
+// kubernetes/release. Make sure you have the dependencies installed for find_green_build
+// before running this function.
 func getCIJobStatus(outputFile, branch string, htmlize bool) error {
-	log.Printf("Adding CI job status (this may take a while)...")
+	log.Printf("Getting CI job status (this may take a while)...")
 
 	red := "<span style=\"color:red\">"
 	green := "<span style=\"color:green\">"
@@ -364,14 +376,14 @@ func createBody(c *github.Client, f *os.File, releaseTag, branch, docURL, exampl
 	}
 
 	if *preview {
-		f.WriteString("**Release Note Preview - generated on " + time.Now().Format("Mon Jan  2 15:04:05 MST 2006") + "**\n")
+		f.WriteString(fmt.Sprintf("**Release Note Preview - generated on %s**\n", time.Now().Format("Mon Jan  2 15:04:05 MST 2006")))
 	}
 
-	f.WriteString("\n# " + title + "\n\n")
+	f.WriteString(fmt.Sprintf("\n# %s\n\n", title))
 	f.WriteString(fmt.Sprintf("[Documentation](%s) & [Examples](%s)\n\n", docURL, exampleURL))
 
 	if releaseTars != "" {
-		f.WriteString("## Downloads for " + title + "\n\n")
+		f.WriteString(fmt.Sprintf("## Downloads for %s\n\n", title))
 		createDownloadsTable(f, releaseTag, "", releaseTars+"/kubernetes.tar.gz", releaseTars+"/kubernetes-src.tar.gz")
 		createDownloadsTable(f, releaseTag, "Client Binaries", releaseTars+"/kubernetes-client*.tar.gz")
 		createDownloadsTable(f, releaseTag, "Server Binaries", releaseTars+"/kubernetes-server*.tar.gz")
@@ -385,9 +397,9 @@ func createDownloadsTable(f *os.File, releaseTag, heading string, filename ...st
 	var urlPrefix string
 
 	if *releaseBucket == "kubernetes-release" {
-		urlPrefix = "https://dl.k8s.io"
+		urlPrefix = k8sReleaseURLPrefix
 	} else {
-		urlPrefix = "https://storage.googleapis.com/" + *releaseBucket + "/release"
+		urlPrefix = fmt.Sprintf("https://storage.googleapis.com/%s/release", *releaseBucket)
 	}
 
 	if heading != "" {
@@ -407,19 +419,14 @@ func createDownloadsTable(f *os.File, releaseTag, heading string, filename ...st
 	}
 
 	for _, file := range files {
-		fn := extractFileName(file)
-		sha, _ := u.GetSha256(file)
+		fn := filepath.Base(file)
+		sha, err := u.GetSha256(file)
+		if err != nil {
+			log.Printf("failed to calc SHA256 of file %s: %s", file, err)
+			os.Exit(1)
+		}
 		f.WriteString(fmt.Sprintf("[%s](%s/%s/%s) | `%s`\n", fn, urlPrefix, releaseTag, fn, sha))
 	}
-}
-
-// extractFileName takes a string and returns the file name after last '/'.
-func extractFileName(filePath string) string {
-	i := strings.LastIndex(filePath, "/")
-	if i != -1 {
-		return filePath[i+1 : len(filePath)]
-	}
-	return filePath
 }
 
 // minorReleases performs a minor (vX.Y.0) release by fetching the release template and aggregate
@@ -449,8 +456,13 @@ func minorRelease(f *os.File, release, draftURL, changelogURL string) {
 	}
 
 	// Aggregate all previous release in series
-	f.WriteString("### Previous Release Included in " + release + "\n\n")
-	reAnchor, _ := regexp.Compile("- \\[" + release + "-")
+	f.WriteString(fmt.Sprintf("### Previous Release Included in %s\n\n", release))
+
+	// Regexp Example:
+	// Assume the release tag is v1.7.0, this regexp matches "- [v1.7.0-" in
+	//     "- [v1.7.0-rc.1](#v170-rc1)"
+	//     "- [v1.7.0-beta.2](#v170-beta2)"
+	reAnchor, _ := regexp.Compile(fmt.Sprintf("- \\[%s-", release))
 
 	resp, err = http.Get(changelogURL)
 	if err == nil {
@@ -475,7 +487,7 @@ func minorRelease(f *os.File, release, draftURL, changelogURL string) {
 func patchRelease(f *os.File, start string, prs []int, issueMap map[int]*github.Issue) {
 	// Release note for different labels (TODO: "release-note" label for now since "experimental" and
 	// "action" are deprecated)
-	f.WriteString("## Changelog since " + start + "\n\n")
+	f.WriteString(fmt.Sprintf("## Changelog since %s\n\n", start))
 
 	if len(prs) > 0 {
 		f.WriteString("### Other notable changes\n\n")
@@ -490,6 +502,9 @@ func patchRelease(f *os.File, start string, prs []int, issueMap map[int]*github.
 
 // extractReleaseNote tries to fetch release note from PR body, otherwise uses PR title.
 func extractReleaseNote(pr *github.Issue) string {
+	// Regexp Example:
+	// This regexp matches the release note section in Kubernetes pull request template:
+	// https://github.com/kubernetes/kubernetes/blob/master/.github/PULL_REQUEST_TEMPLATE.md
 	re, _ := regexp.Compile("```release-note\r\n(.+)\r\n```")
 	if note := re.FindStringSubmatch(*pr.Body); note != nil {
 		return note[1]
@@ -530,6 +545,13 @@ func determineRange(c *github.Client, owner, repo, branch, branchRange string) (
 		lastRelease[branch] = lastRelease["master"]
 	}
 
+	// Regexp Example:
+	// This regexp matches the Git branch range in the format of [[startTag..]endTag]. For example:
+	//
+	//     ""
+	//     "v1.1.4.."
+	//     "v1.1.4..v1.1.7"
+	//     "v1.1.7"
 	re, _ := regexp.Compile("([v0-9.]*-*(alpha|beta|rc)*\\.*[0-9]*)\\.\\.([v0-9.]*-*(alpha|beta|rc)*\\.*[0-9]*)$")
 	tags := re.FindStringSubmatch(branchRange)
 	if tags != nil {
@@ -589,6 +611,11 @@ func parsePRFromCommit(commits []*github.RepositoryCommit) ([]int, error) {
 	prs := make([]int, 0)
 	prsMap := make(map[int]bool)
 
+	// Regexp example:
+	// This regexp matches (Note that it supports multiple-source cherry pick)
+	//
+	// "automated-cherry-pick-of-#12345-#23412-"
+	// "automated-cherry-pick-of-#23791-"
 	reCherry, _ := regexp.Compile("automated-cherry-pick-of-(#[0-9]+-){1,}")
 	reCherryID, _ := regexp.Compile("#([0-9]+)-")
 	reMerge, _ := regexp.Compile("^Merge pull request #([0-9]+) from")
