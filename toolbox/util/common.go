@@ -17,9 +17,11 @@ package util
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
+	"strings"
 )
 
 // Shell runs a command and returns the result as a string.
@@ -42,4 +44,27 @@ func GetSha256(filename string) (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+// RenderProgressBar renders a progress bar by rewriting the current (assuming
+// stdout outputs to a terminal console). If initRender is true, the function
+// writes a new line instead of rewrite the current line.
+func RenderProgressBar(progress, total int, duration string, initRender bool) {
+	barLen := 80
+	var progressLen, arrowLen, remainLen int
+	var rewrite string
+
+	percentage := float64(progress) / float64(total)
+
+	progressLen = int(percentage * float64(barLen))
+	if progressLen < barLen {
+		arrowLen = 1
+	}
+	remainLen = barLen - progressLen - arrowLen
+
+	if !initRender {
+		rewrite = "\r"
+	}
+
+	fmt.Printf("%s%12s [%s%s%s] %7.2f%%", rewrite, duration, strings.Repeat("=", progressLen), strings.Repeat(">", arrowLen), strings.Repeat("-", remainLen), percentage*100.0)
 }

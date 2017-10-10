@@ -20,6 +20,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
@@ -45,6 +46,7 @@ var (
 	mdFileName    = flag.String("markdown-file", "", "Specify an alt file to use to store notes")
 	owner         = flag.String("owner", "kubernetes", "Github owner or organization")
 	preview       = flag.Bool("preview", false, "Report additional branch statistics (used for reporting outside of releases)")
+	quiet         = flag.Bool("quiet", false, "Don't display the notes when done")
 	releaseBucket = flag.String("release-bucket", "kubernetes-release", "Specify gs bucket to point to in generated notes (informational only)")
 	releaseTars   = flag.String("release-tars", "", "Directory of tars to sha256 sum for display")
 	repo          = flag.String("repo", "kubernetes", "Github repository")
@@ -57,8 +59,9 @@ func main() {
 	// Initialization
 	flag.Parse()
 	branchRange := flag.Arg(0)
+	startingTime := time.Now().Round(time.Second)
 
-	log.Printf("Boolean flags: full: %v, htmlize-md: %v, preview: %v", *full, *htmlizeMD, *preview)
+	log.Printf("Boolean flags: full: %v, htmlize-md: %v, preview: %v, quiet: %v", *full, *htmlizeMD, *preview, *quiet)
 	log.Printf("Input branch range: %s", branchRange)
 
 	// If branch isn't specified in flag, use current branch
@@ -75,6 +78,10 @@ func main() {
 	if *mdFileName == "" {
 		*mdFileName = "/tmp/release-notes-" + *branch + ".md"
 	}
+	log.Printf("Output markdown file path: %s", *mdFileName)
+	if *htmlFileName != "" {
+		log.Printf("Output HTML file path: %s", *htmlFileName)
+	}
 
 	// If githubToken isn't specified in flag, use the GITHUB_TOKEN environment variable
 	if *githubToken == "" {
@@ -82,6 +89,7 @@ func main() {
 	}
 	client := u.NewClient(*githubToken)
 
+	log.Printf("Gathering release commits from Github...")
 	// Get release related commits on the release branch within release range
 	releaseCommits, startTag, releaseTag, err := getReleaseCommits(client, *owner, *repo, *branch, branchRange)
 	if err != nil {
@@ -204,6 +212,17 @@ func main() {
 		}
 	}
 
+	if !*quiet {
+		log.Printf("Displaying the markdown release note to stdout...")
+		dat, err := ioutil.ReadFile(*mdFileName)
+		if err != nil {
+			log.Printf("failed to read markdown release note: %s", err)
+		}
+		fmt.Print(string(dat))
+	}
+
+	log.Printf("Program finished... Total running time: %s", time.Now().Round(time.Second).Sub(startingTime).String())
+
 	return
 }
 
@@ -249,6 +268,7 @@ func getPendingPRs(c *github.Client, f *os.File, owner, repo, branch string) err
 
 // createHTMLNote generates HTML release note based on the input markdown release note.
 func createHTMLNote(htmlFileName, mdFileName string) error {
+	log.Printf("Generating HTML release note...")
 	cssFileName := "/tmp/release_note_cssfile"
 	cssFile, err := os.Create(cssFileName)
 	if err != nil {
