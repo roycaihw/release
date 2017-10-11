@@ -46,7 +46,7 @@ var (
 	exampleURLPrefix = flag.String("example-url-prefix", "https://releases.k8s.io/", "Example URL prefix displayed in release notes")
 	full             = flag.Bool("full", false, "Force 'full' release format to show all sections of release notes. "+
 		"(This is the *default* for new branch X.Y.0 notes)")
-	githubToken   = flag.String("github-token", "", "Must be specified, or set the GITHUB_TOKEN environment variable")
+	githubToken   = flag.String("github-token", "", "The file that contains Github token. Must be specified, or set the GITHUB_TOKEN environment variable.")
 	htmlFileName  = flag.String("html-file", "", "Produce a html version of the notes")
 	htmlizeMD     = flag.Bool("htmlize-md", false, "Output markdown with html for PRs and contributors (for use in CHANGELOG.md)")
 	mdFileName    = flag.String("markdown-file", "", "Specify an alt file to use to store notes")
@@ -61,6 +61,13 @@ var (
 	branchHead = ""
 )
 
+// ReleaseInfo contains release related information to generate a release note.
+type ReleaseInfo struct {
+	startTag, releaseTag string
+	issueMap             map[int]*github.Issue
+	releasePRs           []int
+}
+
 func main() {
 	// Initialization
 	flag.Parse()
@@ -70,8 +77,8 @@ func main() {
 	log.Printf("Boolean flags: full: %v, htmlize-md: %v, preview: %v, quiet: %v", *full, *htmlizeMD, *preview, *quiet)
 	log.Printf("Input branch range: %s", branchRange)
 
-	// If branch isn't specified in flag, use current branch
 	if *branch == "" {
+		// If branch isn't specified in flag, use current branch
 		var err error
 		*branch, err = u.GetCurrentBranch()
 		if err != nil {
@@ -89,107 +96,33 @@ func main() {
 		log.Printf("Output HTML file path: %s", *htmlFileName)
 	}
 
-	// If githubToken isn't specified in flag, use the GITHUB_TOKEN environment variable
 	if *githubToken == "" {
+		// If githubToken isn't specified in flag, use the GITHUB_TOKEN environment variable
 		*githubToken = os.Getenv("GITHUB_TOKEN")
+	} else {
+		*githubToken = readGithubToken(*githubToken)
 	}
 	client := u.NewClient(*githubToken)
 
-	log.Printf("Gathering release commits from Github...")
-	// Get release related commits on the release branch within release range
-	releaseCommits, startTag, releaseTag, err := getReleaseCommits(client, *owner, *repo, *branch, branchRange)
-	if err != nil {
-		log.Printf("failed to get release commits for %s: %s", branchRange, err)
-		os.Exit(1)
-	}
+	// End of initialization
 
-	// Parse release related PR ids from the release commits
-	commitPRs, err := parsePRFromCommit(releaseCommits)
-	if err != nil {
-		log.Printf("failed to parse release commits: %s", err)
-		os.Exit(1)
-	}
-
-	// Get number-issue mapping for issues in the repository
-	issues, err := u.ListAllIssues(client, *owner, *repo)
-	if err != nil {
-		log.Printf("failed to list all issues from %s: %s", *repo, err)
-		os.Exit(1)
-	}
-	issueMap := make(map[int]*github.Issue)
-	for _, i := range issues {
-		issueMap[*i.Number] = i
-	}
-
-	// Get release note PRs by examining release-note label on commit PRs
-	releasePRs := make([]int, 0)
-	for _, pr := range commitPRs {
-		if u.HasLabel(issueMap[pr], "release-note") {
-			releasePRs = append(releasePRs, pr)
-		}
-	}
+	// Gather release related information including startTag, releaseTag, issueMap and releasePRs
+	releaseInfo := gatherReleaseInfo(client, branchRange)
 
 	// Generating release note...
 	log.Printf("Generating release notes...")
-
-	prFile, err := os.Create(prFileName)
-	if err != nil {
-		log.Printf("failed to create release note file %s: %s", prFileName, err)
-		os.Exit(1)
-	}
-
-	// Bootstrap notes for minor (new branch) releases
-	if *full || u.IsVer(releaseTag, "dotzero") {
-		draftURL := fmt.Sprintf("%s%s/features/master/%s/release-notes-draft.md", u.GithubRawURL, *owner, *branch)
-		changelogURL := fmt.Sprintf("%s%s/%s/master/CHANGELOG.md", u.GithubRawURL, *owner, *repo)
-		minorRelease(prFile, releaseTag, draftURL, changelogURL)
-	} else {
-		patchRelease(prFile, startTag, releasePRs, issueMap)
-	}
-
-	prFile.Close()
+	gatherPRNotes(prFileName, releaseInfo.startTag, releaseInfo.releaseTag, releaseInfo.releasePRs, releaseInfo.issueMap)
 
 	// Start generating markdown file
 	log.Printf("Preparing layout...")
-
-	mdFile, err := os.Create(*mdFileName)
-	if err != nil {
-		log.Printf("failed to create release note markdown file %s: %s", *mdFileName, err)
-		os.Exit(1)
-	}
-
-	// Create markdown file body with documentation and example URLs from program flags
-	exampleURL := fmt.Sprintf("%s%s/examples", *exampleURLPrefix, *branch)
-	createBody(client, mdFile, releaseTag, *branch, *documentURL, exampleURL, *releaseTars)
-
-	// Copy (append) the pull request notes into the output markdown file
-	prFile, _ = os.Open(prFileName)
-	_, err = io.Copy(mdFile, prFile)
-	if err != nil {
-		log.Printf("failed to copy from PR file to release note markdown file: %s", err)
-	}
-	err = mdFile.Sync()
-	if err != nil {
-		log.Printf("failed to copy from PR file to release note markdown file: %s", err)
-	}
-
-	prFile.Close()
-
-	if *preview {
-		// If in preview mode, get the pending PRs
-		err = getPendingPRs(client, mdFile, *owner, *repo, *branch)
-		if err != nil {
-			log.Printf("failed to get pending PRs: %s", err)
-			os.Exit(1)
-		}
-	}
-	mdFile.Close()
+	generateMDFile(client, releaseInfo.releaseTag, prFileName)
 
 	if *htmlizeMD {
+		// HTML-ize markdown file
 		// Make users and PRs linkable
 		// Also, expand anchors (needed for email announce())
 		projectGithubURL := fmt.Sprintf("https://github.com/%s/%s", *owner, *repo)
-		_, err = u.Shell("sed", "-i", "-e", "s,#\\([0-9]\\{5\\,\\}\\),[#\\1]("+projectGithubURL+"/pull/\\1),g",
+		_, err := u.Shell("sed", "-i", "-e", "s,#\\([0-9]\\{5\\,\\}\\),[#\\1]("+projectGithubURL+"/pull/\\1),g",
 			"-e", "s,\\(#v[0-9]\\{3\\}-\\),"+projectGithubURL+"/blob/master/CHANGELOG.md\\1,g",
 			"-e", "s,@\\([a-zA-Z0-9-]*\\),[@\\1](https://github.com/\\1),g", *mdFileName)
 
@@ -207,7 +140,7 @@ func main() {
 		// NOTE: this function is Kubernetes-specified and runs the find_green_build script under
 		// kubernetes/release. Make sure you have the dependencies installed for find_green_build
 		// before running this function.
-		err = getCIJobStatus(*mdFileName, *branch, *htmlizeMD)
+		err := getCIJobStatus(*mdFileName, *branch, *htmlizeMD)
 		if err != nil {
 			log.Printf("failed to get CI status: %s", err)
 			os.Exit(1)
@@ -215,17 +148,21 @@ func main() {
 	}
 
 	if *htmlFileName != "" {
-		err = createHTMLNote(*htmlFileName, *mdFileName)
+		// If HTML file name is given, generate HTML release note
+		err := createHTMLNote(*htmlFileName, *mdFileName)
 		if err != nil {
 			log.Printf("failed to generate HTML release note: %s", err)
+			os.Exit(1)
 		}
 	}
 
 	if !*quiet {
+		// If --quiet flag is not specified, print the markdown release note to stdout
 		log.Printf("Displaying the markdown release note to stdout...")
 		dat, err := ioutil.ReadFile(*mdFileName)
 		if err != nil {
 			log.Printf("failed to read markdown release note: %s", err)
+			os.Exit(1)
 		}
 		fmt.Print(string(dat))
 	}
@@ -233,6 +170,114 @@ func main() {
 	log.Printf("Successfully generated release note. Total running time: %s", time.Now().Round(time.Second).Sub(startingTime).String())
 
 	return
+}
+
+func readGithubToken(filename string) string {
+	dat, err := ioutil.ReadFile(filename)
+	if err != nil {
+		log.Printf("failed to get Github token from file %s: %s", filename, err)
+		os.Exit(1)
+	}
+	return strings.TrimSpace(string(dat))
+}
+
+func gatherReleaseInfo(client *github.Client, branchRange string) *ReleaseInfo {
+	var info ReleaseInfo
+	log.Printf("Gathering release commits from Github...")
+	// Get release related commits on the release branch within release range
+	releaseCommits, startTag, releaseTag, err := getReleaseCommits(client, *owner, *repo, *branch, branchRange)
+	if err != nil {
+		log.Printf("failed to get release commits for %s: %s", branchRange, err)
+		os.Exit(1)
+	}
+	info.startTag = startTag
+	info.releaseTag = releaseTag
+
+	// Parse release related PR ids from the release commits
+	commitPRs, err := parsePRFromCommit(releaseCommits)
+	if err != nil {
+		log.Printf("failed to parse release commits: %s", err)
+		os.Exit(1)
+	}
+
+	// Get number-issue mapping for issues in the repository
+	issues, err := u.ListAllIssues(client, *owner, *repo)
+	if err != nil {
+		log.Printf("failed to list all issues from %s: %s", *repo, err)
+		os.Exit(1)
+	}
+	info.issueMap = make(map[int]*github.Issue)
+	for _, i := range issues {
+		info.issueMap[*i.Number] = i
+	}
+
+	// Get release note PRs by examining release-note label on commit PRs
+	info.releasePRs = make([]int, 0)
+	for _, pr := range commitPRs {
+		if u.HasLabel(info.issueMap[pr], "release-note") {
+			info.releasePRs = append(info.releasePRs, pr)
+		}
+	}
+
+	return &info
+}
+
+func gatherPRNotes(prFileName, startTag, releaseTag string, releasePRs []int, issueMap map[int]*github.Issue) {
+	prFile, err := os.Create(prFileName)
+	if err != nil {
+		log.Printf("failed to create release note file %s: %s", prFileName, err)
+		os.Exit(1)
+	}
+	defer func() {
+		if err = prFile.Close(); err != nil {
+			log.Printf("failed to close file %s, %s", prFileName, err)
+			os.Exit(1)
+		}
+	}()
+
+	// Bootstrap notes for minor (new branch) releases
+	if *full || u.IsVer(releaseTag, "dotzero") {
+		draftURL := fmt.Sprintf("%s%s/features/master/%s/release-notes-draft.md", u.GithubRawURL, *owner, *branch)
+		changelogURL := fmt.Sprintf("%s%s/%s/master/CHANGELOG.md", u.GithubRawURL, *owner, *repo)
+		minorRelease(prFile, releaseTag, draftURL, changelogURL)
+	} else {
+		patchRelease(prFile, startTag, releasePRs, issueMap)
+	}
+}
+
+func generateMDFile(c *github.Client, releaseTag, prFileName string) {
+	mdFile, err := os.Create(*mdFileName)
+	if err != nil {
+		log.Printf("failed to create release note markdown file %s: %s", *mdFileName, err)
+		os.Exit(1)
+	}
+	defer func() {
+		if err = mdFile.Close(); err != nil {
+			log.Printf("failed to close file %s, %s", *mdFileName, err)
+			os.Exit(1)
+		}
+	}()
+
+	// Create markdown file body with documentation and example URLs from program flags
+	exampleURL := fmt.Sprintf("%s%s/examples", *exampleURLPrefix, *branch)
+	createBody(c, mdFile, releaseTag, *branch, *documentURL, exampleURL, *releaseTars)
+
+	// Copy (append) the pull request notes into the output markdown file
+	dat, err := ioutil.ReadFile(prFileName)
+	if err != nil {
+		log.Printf("failed to copy from PR file to release note markdown file: %s", err)
+		os.Exit(1)
+	}
+	mdFile.WriteString(string(dat))
+
+	if *preview {
+		// If in preview mode, get the pending PRs
+		err = getPendingPRs(c, mdFile, *owner, *repo, *branch)
+		if err != nil {
+			log.Printf("failed to get pending PRs: %s", err)
+			os.Exit(1)
+		}
+	}
 }
 
 // getPendingPRs gets pending PRs on given branch in the repo.
@@ -288,7 +333,13 @@ func createHTMLNote(htmlFileName, mdFileName string) error {
 	cssFile.WriteString("table,th,tr,td {border: 1px solid gray; ")
 	cssFile.WriteString("border-collapse: collapse;padding: 5px;} ")
 	cssFile.WriteString("</style>")
-	cssFile.Close()
+	// Here we manually close the css file instead of defer the close function,
+	// because we need to use the css file for pandoc command below.
+	// Writing to css file is a clear small logic so we don't separate it into
+	// another function.
+	if err = cssFile.Close(); err != nil {
+		return fmt.Errorf("failed to close file %s, %s", cssFileName, err)
+	}
 
 	htmlStr, err := u.Shell("pandoc", "-H", cssFileName, "--from", "markdown_github", "--to", "html", mdFileName)
 	if err != nil {
@@ -299,7 +350,12 @@ func createHTMLNote(htmlFileName, mdFileName string) error {
 	if err != nil {
 		return fmt.Errorf("failed to create html file: %s", err)
 	}
-	defer htmlFile.Close()
+	defer func() {
+		if err = htmlFile.Close(); err != nil {
+			log.Printf("failed to close file %s, %s", htmlFileName, err)
+			os.Exit(1)
+		}
+	}()
 
 	htmlFile.WriteString(htmlStr)
 	return nil
@@ -340,8 +396,12 @@ func getCIJobStatus(outputFile, branch string, htmlize bool) error {
 	if err != nil {
 		return err
 	}
-
-	defer f.Close()
+	defer func() {
+		if err = f.Close(); err != nil {
+			log.Printf("failed to close file %s, %s", outputFile, err)
+			os.Exit(1)
+		}
+	}()
 
 	f.WriteString(fmt.Sprintf("## State of %s branch\n", branch))
 
