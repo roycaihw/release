@@ -241,36 +241,79 @@ func HasLabel(i *github.Issue, label string) bool {
 }
 
 // SearchIssues gets all issues matching search query.
-// NOTE: Github Search API has tight rate limit. For large search request, use ListAllIssues instead.
+// NOTE: Github Search API has tight rate limit (30 requests per minute) and only returns the first 1,000 results.
+// The function waits if it hits the rate limit, and reconstruct the search query with "created:<=YYYY-MM-DD" to
+// search for issues out of the first 1,000 results.
 func SearchIssues(c *github.Client, query string) ([]github.Issue, error) {
+	issues := make([]github.Issue, 0)
+	issuesGot := make(map[int]bool)
+	lastDateGot := ""
+	totalIssueNumber := 0
+
 	lo := &github.ListOptions{
 		Page:    1,
 		PerPage: 100,
 	}
-
 	so := &github.SearchOptions{
 		ListOptions: *lo,
 	}
 
-	issues := make([]github.Issue, 0)
-	result, resp, err := c.Search.Issues(context.Background(), query, so)
-	if err != nil {
-		return nil, err
-	}
-	for _, i := range result.Issues {
-		issues = append(issues, i)
-	}
-	so.ListOptions.Page++
-
-	for so.ListOptions.Page <= resp.LastPage {
-		result, _, err = c.Search.Issues(context.Background(), query, so)
+	for {
+		r, _, err := c.Search.Issues(context.Background(), query, so)
 		if err != nil {
+			if _, ok := err.(*github.RateLimitError); ok {
+				log.Printf("Hitting Github search API rate limit, sleeping for 30 seconds... error message: %s", err)
+				time.Sleep(30 * time.Second)
+				continue
+			}
+			return nil, err
+		}
+		totalIssueNumber = *r.Total
+		break
+	}
+
+	for len(issues) < totalIssueNumber {
+		q := query + lastDateGot
+		// Get total number of pages in resp.LastPage
+		result, resp, err := c.Search.Issues(context.Background(), q, so)
+		if err != nil {
+			if _, ok := err.(*github.RateLimitError); ok {
+				log.Printf("Hitting Github search API rate limit, sleeping for 30 seconds... error message: %s", err)
+				time.Sleep(30 * time.Second)
+				continue
+			}
 			return nil, err
 		}
 		for _, i := range result.Issues {
-			issues = append(issues, i)
+			if issuesGot[*i.Number] == false {
+				issues = append(issues, i)
+				issuesGot[*i.Number] = true
+				lastDateGot = fmt.Sprintf(" created:<=%s", i.CreatedAt.Format("2006-01-02"))
+			}
 		}
 		so.ListOptions.Page++
+
+		for so.ListOptions.Page <= resp.LastPage {
+			result, _, err = c.Search.Issues(context.Background(), q, so)
+			if err != nil {
+				if _, ok := err.(*github.RateLimitError); ok {
+					log.Printf("Hitting Github search API rate limit, sleeping for 30 seconds... error message: %s", err)
+					time.Sleep(30 * time.Second)
+					continue
+				}
+				return nil, err
+			}
+			for _, i := range result.Issues {
+				if issuesGot[*i.Number] == false {
+					issues = append(issues, i)
+					issuesGot[*i.Number] = true
+					lastDateGot = fmt.Sprintf(" created:<=%s", i.CreatedAt.Format("2006-01-02"))
+				}
+			}
+			so.ListOptions.Page++
+		}
+		// Reset page number
+		so.ListOptions.Page = 1
 	}
 	return issues, nil
 }
