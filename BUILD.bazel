@@ -1,5 +1,8 @@
-load("@io_bazel_rules_go//go:def.bzl", "gazelle", "go_prefix")
+load("@io_bazel_rules_go//go:def.bzl", "gazelle")
 
-go_prefix("k8s.io/release")
+gazelle(
+	name = "gazelle",
+	prefix = "k8s.io/release",
+	external = "vendored",
+)
 
-gazelle(name = "gazelle")
