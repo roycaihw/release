@@ -1,3 +1,4 @@
+workspace(name = "io_kubernetes_build")
 http_archive(
     name = "io_bazel_rules_go",
     url = "https://github.com/bazelbuild/rules_go/releases/download/0.6.0/rules_go-0.6.0.tar.gz",
