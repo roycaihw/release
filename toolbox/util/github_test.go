@@ -192,7 +192,7 @@ func TestAddQuerySearchIssues(t *testing.T) {
 			"is":   "open",
 			"type": "pr",
 			"base": "release-1.7",
-		}, 7},
+		}, 9},
 		{map[string]string{
 			"repo": "kubernetes/kubernetes",
 			"is":   "open",
@@ -203,7 +203,7 @@ func TestAddQuerySearchIssues(t *testing.T) {
 			"repo":  "kubernetes/kubernetes",
 			"type":  "pr",
 			"label": "release-note",
-		}, 3174},
+		}, 3259},
 	}
 
 	githubToken := os.Getenv("GITHUB_TOKEN")

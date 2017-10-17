@@ -254,7 +254,10 @@ func SearchIssues(c *github.Client, query string) ([]github.Issue, error) {
 		Page:    1,
 		PerPage: 100,
 	}
+	// In order to search for >1,000 result, we use created time as a metric of searching progress. Therefore we
+	// enforce "Sort:created" and "Order:desc".
 	so := &github.SearchOptions{
+		Sort:        "created",
 		ListOptions: *lo,
 	}
 

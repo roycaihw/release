@@ -64,9 +64,10 @@ var (
 // ReleaseInfo contains release related information to generate a release note.
 // NOTE: the prMap only includes PRs with "release-note" label.
 type ReleaseInfo struct {
-	startTag, releaseTag string
-	prMap                map[int]*github.Issue
-	releasePRs           []int
+	startTag, releaseTag     string
+	prMap                    map[int]*github.Issue
+	releasePRs               []int
+	releaseActionRequiredPRs []int
 }
 
 func main() {
@@ -112,7 +113,7 @@ func main() {
 
 	// Generating release note...
 	log.Printf("Generating release notes...")
-	gatherPRNotes(prFileName, releaseInfo.startTag, releaseInfo.releaseTag, releaseInfo.releasePRs, releaseInfo.prMap)
+	gatherPRNotes(prFileName, releaseInfo)
 
 	// Start generating markdown file
 	log.Printf("Preparing layout...")
@@ -213,11 +214,30 @@ func gatherReleaseInfo(client *github.Client, branchRange string) *ReleaseInfo {
 	}
 	log.Printf("\"release-note\" labelled PRs gathered.")
 
+	log.Printf("Gathering \"release-note-action-required\" labelled PRs using Github search API.")
+	query = nil
+	query = u.AddQuery(query, "repo", *owner, "/", *repo)
+	query = u.AddQuery(query, "type", "pr")
+	query = u.AddQuery(query, "label", "release-note-action-required")
+	releaseNoteActionRequiredPRs, err := u.SearchIssues(client, strings.Join(query, " "))
+	if err != nil {
+		log.Printf("failed to search release-note-action-required labelled PRs: %s", err)
+		os.Exit(1)
+	}
+	log.Printf("\"release-note-action-required\" labelled PRs gathered.")
+
 	info.prMap = make(map[int]*github.Issue)
 	for _, i := range releaseNotePRs {
 		ptr := new(github.Issue)
 		*ptr = i
 		info.prMap[*ptr.Number] = ptr
+	}
+
+	actionRequiredPRMap := make(map[int]*github.Issue)
+	for _, i := range releaseNoteActionRequiredPRs {
+		ptr := new(github.Issue)
+		*ptr = i
+		actionRequiredPRMap[*ptr.Number] = ptr
 	}
 
 	// Get release note PRs by examining release-note label on commit PRs
@@ -226,12 +246,19 @@ func gatherReleaseInfo(client *github.Client, branchRange string) *ReleaseInfo {
 		if info.prMap[pr] != nil {
 			info.releasePRs = append(info.releasePRs, pr)
 		}
+		if actionRequiredPRMap[pr] != nil {
+			info.releaseActionRequiredPRs = append(info.releaseActionRequiredPRs, pr)
+		}
+	}
+
+	for k, v := range actionRequiredPRMap {
+		info.prMap[k] = v
 	}
 
 	return &info
 }
 
-func gatherPRNotes(prFileName, startTag, releaseTag string, releasePRs []int, prMap map[int]*github.Issue) {
+func gatherPRNotes(prFileName string, info *ReleaseInfo) {
 	prFile, err := os.Create(prFileName)
 	if err != nil {
 		log.Printf("failed to create release note file %s: %s", prFileName, err)
@@ -245,12 +272,12 @@ func gatherPRNotes(prFileName, startTag, releaseTag string, releasePRs []int, pr
 	}()
 
 	// Bootstrap notes for minor (new branch) releases
-	if *full || u.IsVer(releaseTag, "dotzero") {
+	if *full || u.IsVer(info.releaseTag, "dotzero") {
 		draftURL := fmt.Sprintf("%s%s/features/master/%s/release-notes-draft.md", u.GithubRawURL, *owner, *branch)
 		changelogURL := fmt.Sprintf("%s%s/%s/master/CHANGELOG.md", u.GithubRawURL, *owner, *repo)
-		minorRelease(prFile, releaseTag, draftURL, changelogURL)
+		minorRelease(prFile, info.releaseTag, draftURL, changelogURL)
 	} else {
-		patchRelease(prFile, startTag, releasePRs, prMap)
+		patchRelease(prFile, info)
 	}
 }
 
@@ -553,15 +580,23 @@ func minorRelease(f *os.File, release, draftURL, changelogURL string) {
 }
 
 // patchRelease performs a patch (vX.Y.Z) release by printing out all the related changes.
-func patchRelease(f *os.File, start string, prs []int, prMap map[int]*github.Issue) {
+func patchRelease(f *os.File, info *ReleaseInfo) {
 	// Release note for different labels (TODO: "release-note" label for now since "experimental" and
 	// "action" are deprecated)
-	f.WriteString(fmt.Sprintf("## Changelog since %s\n\n", start))
+	f.WriteString(fmt.Sprintf("## Changelog since %s\n\n", info.startTag))
 
-	if len(prs) > 0 {
+	if len(info.releaseActionRequiredPRs) > 0 {
+		f.WriteString("### Action Required\n\n")
+		for _, pr := range info.releaseActionRequiredPRs {
+			f.WriteString(fmt.Sprintf("* %s (#%d, @%s)\n", extractReleaseNote(info.prMap[pr]), pr, *info.prMap[pr].User.Login))
+		}
+		f.WriteString("\n")
+	}
+
+	if len(info.releasePRs) > 0 {
 		f.WriteString("### Other notable changes\n\n")
-		for _, pr := range prs {
-			f.WriteString(fmt.Sprintf("* %s (#%d, @%s)\n", extractReleaseNote(prMap[pr]), pr, *prMap[pr].User.Login))
+		for _, pr := range info.releasePRs {
+			f.WriteString(fmt.Sprintf("* %s (#%d, @%s)\n", extractReleaseNote(info.prMap[pr]), pr, *info.prMap[pr].User.Login))
 		}
 		f.WriteString("\n")
 	} else {
