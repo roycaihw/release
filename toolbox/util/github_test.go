@@ -172,7 +172,11 @@ func TestGetCommitDate(t *testing.T) {
 	tags, _ := c.ListAllTags("kubernetes", "helm")
 
 	for _, table := range tables {
-		d, ok := c.GetCommitDate(table.owner, table.repo, table.tagCommit, tags)
+		d, err := c.GetCommitDate(table.owner, table.repo, table.tagCommit, tags)
+		var ok bool
+		if err == nil {
+			ok = true
+		}
 		if table.exist != ok {
 			t.Errorf("%v: Existence check failed, want: %v, got: %v", table.tagCommit, table.exist, ok)
 		}

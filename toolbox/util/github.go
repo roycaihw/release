@@ -229,20 +229,21 @@ func (g GithubClient) ListAllCommits(owner, repo, branch string, start, end time
 }
 
 // GetCommitDate gets commit time for given tag/commit, provided with repository tags and commits.
-// The function returns ok as false if input tag/commit cannot be found in the repository.
-func (g GithubClient) GetCommitDate(owner, repo, tagCommit string, tags []*github.RepositoryTag) (date time.Time, ok bool) {
+// The function returns non-nil error if input tag/commit cannot be found in the repository.
+func (g GithubClient) GetCommitDate(owner, repo, tagCommit string, tags []*github.RepositoryTag) (time.Time, error) {
+	sha := tagCommit
 	// If input string is a tag, convert it into SHA
 	for _, t := range tags {
 		if tagCommit == *t.Name {
-			tagCommit = *t.Commit.SHA
+			sha = *t.Commit.SHA
 			break
 		}
 	}
-	commit, _, err := g.client.Git.GetCommit(context.Background(), owner, repo, tagCommit)
+	commit, _, err := g.client.Git.GetCommit(context.Background(), owner, repo, sha)
 	if err != nil {
-		return time.Time{}, false
+		return time.Time{}, fmt.Errorf("failed to get commit date for SHA %s (original tag/commit %s): %s", sha, tagCommit, err)
 	}
-	return *commit.Committer.Date, true
+	return *commit.Committer.Date, nil
 }
 
 // HasLabel checks if input github issue contains input label.

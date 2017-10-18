@@ -137,7 +137,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	if *htmlizeMD {
+	if *htmlizeMD && !u.IsVer(releaseInfo.releaseTag, verDotzero) {
 		// HTML-ize markdown file
 		// Make users and PRs linkable
 		// Also, expand anchors (needed for email announce())
@@ -721,13 +721,13 @@ func getReleaseCommits(g *u.GithubClient, owner, repo, branch, branchRange strin
 	}
 
 	// Get commits for specified branch and range
-	tStart, ok := g.GetCommitDate(owner, repo, startTag, tags)
-	if ok != true {
-		return nil, "", "", fmt.Errorf("failed to get start commit date: %s", startTag)
+	tStart, err := g.GetCommitDate(owner, repo, startTag, tags)
+	if err != nil {
+		return nil, "", "", fmt.Errorf("failed to get start commit date for %s: %s", startTag, err)
 	}
-	tEnd, ok := g.GetCommitDate(owner, repo, releaseTag, tags)
-	if ok != true {
-		return nil, "", "", fmt.Errorf("failed to get release commit date: %s", releaseTag)
+	tEnd, err := g.GetCommitDate(owner, repo, releaseTag, tags)
+	if err != nil {
+		return nil, "", "", fmt.Errorf("failed to get release commit date for %s: %s", releaseTag, err)
 	}
 
 	releaseCommits, err := g.ListAllCommits(owner, repo, branch, tStart, tEnd)
