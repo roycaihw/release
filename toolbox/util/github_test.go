@@ -29,7 +29,7 @@ func TestLastReleases(t *testing.T) {
 	c := NewClient(githubToken)
 
 	for _, table := range tables {
-		r, err := LastReleases(c, table.owner, table.repo)
+		r, err := c.LastReleases(table.owner, table.repo)
 		if err != nil {
 			t.Errorf("%v %v: Unexpected error: %v", table.owner, table.repo, err)
 		}
@@ -59,7 +59,7 @@ func TestListAllReleases(t *testing.T) {
 	c := NewClient(githubToken)
 
 	for _, table := range tables {
-		r, err := ListAllReleases(c, table.owner, table.repo)
+		r, err := c.ListAllReleases(table.owner, table.repo)
 		if err != nil {
 			t.Errorf("%v %v: Unexpected error: %v", table.owner, table.repo, err)
 		}
@@ -85,7 +85,7 @@ func TestListAllTags(t *testing.T) {
 	c := NewClient(githubToken)
 
 	for _, table := range tables {
-		tags, err := ListAllTags(c, table.owner, table.repo)
+		tags, err := c.ListAllTags(table.owner, table.repo)
 		if err != nil {
 			t.Errorf("%v %v: Unexpected error: %v", table.owner, table.repo, err)
 		}
@@ -110,7 +110,7 @@ func TestListAllIssues(t *testing.T) {
 	c := NewClient(githubToken)
 
 	for _, table := range tables {
-		i, err := ListAllIssues(c, table.owner, table.repo)
+		i, err := c.ListAllIssues(table.owner, table.repo)
 		if err != nil {
 			t.Errorf("%v %v: Unexpected error: %v", table.owner, table.repo, err)
 		}
@@ -143,7 +143,7 @@ func TestListAllCommits(t *testing.T) {
 	c := NewClient(githubToken)
 
 	for _, table := range tables {
-		commits, err := ListAllCommits(c, table.owner, table.repo, table.branch, table.start, table.end)
+		commits, err := c.ListAllCommits(table.owner, table.repo, table.branch, table.start, table.end)
 		if err != nil {
 			t.Errorf("%v %v %v: Unexpected error: %v", table.owner, table.repo, table.branch, err)
 		}
@@ -169,10 +169,10 @@ func TestGetCommitDate(t *testing.T) {
 
 	githubToken := os.Getenv("GITHUB_TOKEN")
 	c := NewClient(githubToken)
-	tags, _ := ListAllTags(c, "kubernetes", "helm")
+	tags, _ := c.ListAllTags("kubernetes", "helm")
 
 	for _, table := range tables {
-		d, ok := GetCommitDate(c, table.owner, table.repo, table.tagCommit, tags)
+		d, ok := c.GetCommitDate(table.owner, table.repo, table.tagCommit, tags)
 		if table.exist != ok {
 			t.Errorf("%v: Existence check failed, want: %v, got: %v", table.tagCommit, table.exist, ok)
 		}
@@ -214,7 +214,7 @@ func TestAddQuerySearchIssues(t *testing.T) {
 		for k, v := range table.q {
 			query = AddQuery(query, k, v)
 		}
-		result, err := SearchIssues(c, strings.Join(query, " "))
+		result, err := c.SearchIssues(strings.Join(query, " "))
 		if err != nil {
 			t.Errorf("Unexpected error: %s", err)
 		}
