@@ -556,8 +556,7 @@ func minorRelease(f *os.File, release, draftURL, changelogURL string) {
 		defer resp.Body.Close()
 	}
 
-	// TODO: find a better way to tell failed response
-	if err == nil && (resp.StatusCode == 200 || resp.StatusCode == 304) {
+	if err == nil && resp.StatusCode == 200 {
 		log.Printf("Draft found - using for release notes...")
 		_, err = io.Copy(f, resp.Body)
 		if err != nil {
@@ -589,8 +588,7 @@ func minorRelease(f *os.File, release, draftURL, changelogURL string) {
 		defer resp.Body.Close()
 	}
 
-	// TODO: find a better way to tell failed response
-	if err == nil && (resp.StatusCode == 200 || resp.StatusCode == 304) {
+	if err == nil && resp.StatusCode == 200 {
 		buf := new(bytes.Buffer)
 		buf.ReadFrom(resp.Body)
 		for _, line := range strings.Split(buf.String(), "\n") {
