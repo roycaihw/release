@@ -84,7 +84,7 @@ func TestRegExp(t *testing.T) {
 				for idx, i := range vID {
 					id, err := strconv.Atoi(i[1])
 					if err != nil {
-						t.Errorf("Unexpected error: %s", err)
+						t.Errorf("Unexpected error: %v", err)
 					} else if table.numCP[idx] != id {
 						t.Errorf("Cherry pick id was incorrect, want: %d, got: %d", table.numCP[idx], id)
 					}
@@ -102,7 +102,7 @@ func TestRegExp(t *testing.T) {
 		if table.pr && vPR != nil {
 			id, err := strconv.Atoi(vPR[1])
 			if err != nil {
-				t.Errorf("Unexpected error: %s", err)
+				t.Errorf("Unexpected error: %v", err)
 			} else if table.numPR != id {
 				t.Errorf("Normal PR id was incorrect, want: %d, got: %d", table.numPR, id)
 			}
@@ -122,11 +122,11 @@ func TestGetCIJobStatus(t *testing.T) {
 
 	err := getCIJobStatus(filename, "release-1.7", false)
 	if err != nil {
-		t.Errorf("Unexpected error: %s", err)
+		t.Errorf("Unexpected error: %v", err)
 	}
 	err = getCIJobStatus(filenameHTML, "release-1.7", true)
 	if err != nil {
-		t.Errorf("Unexpected error: %s", err)
+		t.Errorf("Unexpected error: %v", err)
 	}
 }
 
@@ -139,7 +139,7 @@ func TestCreateBody(t *testing.T) {
 	releaseTars := "../../../public_kubernetes/_output/release-tars"
 	f, err := os.Create(filename)
 	if err != nil {
-		t.Errorf("Unexpected error: %s", err)
+		t.Errorf("Unexpected error: %v", err)
 	}
 
 	createBody(f, releaseTag, branch, docURL, exampleURL, releaseTars)
@@ -150,7 +150,7 @@ func TestCreateHTMLNote(t *testing.T) {
 	mdFileName := "/tmp/relnotes-release-1.7.md"
 	err := createHTMLNote(htmlFileName, mdFileName)
 	if err != nil {
-		t.Errorf("Unexpected error: %s", err)
+		t.Errorf("Unexpected error: %v", err)
 	}
 }
 
@@ -162,7 +162,7 @@ func TestGetPendingPRs(t *testing.T) {
 
 	f, err := os.Create(filename)
 	if err != nil {
-		t.Errorf("Unexpected error: %s", err)
+		t.Errorf("Unexpected error: %v", err)
 	}
 
 	githubToken := os.Getenv("GITHUB_TOKEN")
@@ -170,6 +170,6 @@ func TestGetPendingPRs(t *testing.T) {
 
 	err = getPendingPRs(c, f, owner, repo, branch)
 	if err != nil {
-		t.Errorf("Unexpected error: %s", err)
+		t.Errorf("Unexpected error: %v", err)
 	}
 }

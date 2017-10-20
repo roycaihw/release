@@ -220,7 +220,7 @@ func TestAddQuerySearchIssues(t *testing.T) {
 		}
 		result, err := c.SearchIssues(strings.Join(query, " "))
 		if err != nil {
-			t.Errorf("Unexpected error: %s", err)
+			t.Errorf("Unexpected error: %v", err)
 		}
 		if len(result) != table.num {
 			t.Errorf("Result number was incorrect, want: %d, got %d", table.num, len(result))

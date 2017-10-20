@@ -241,7 +241,7 @@ func (g GithubClient) GetCommitDate(owner, repo, tagCommit string, tags []*githu
 	}
 	commit, _, err := g.client.Git.GetCommit(context.Background(), owner, repo, sha)
 	if err != nil {
-		return time.Time{}, fmt.Errorf("failed to get commit date for SHA %s (original tag/commit %s): %s", sha, tagCommit, err)
+		return time.Time{}, fmt.Errorf("failed to get commit date for SHA %s (original tag/commit %s): %v", sha, tagCommit, err)
 	}
 	return *commit.Committer.Date, nil
 }
@@ -282,7 +282,7 @@ func (g GithubClient) SearchIssues(query string) ([]github.Issue, error) {
 		r, _, err := g.client.Search.Issues(context.Background(), query, so)
 		if err != nil {
 			if _, ok := err.(*github.RateLimitError); ok {
-				log.Printf("Hitting Github search API rate limit, sleeping for 30 seconds... error message: %s", err)
+				log.Printf("Hitting Github search API rate limit, sleeping for 30 seconds... error message: %v", err)
 				time.Sleep(30 * time.Second)
 				continue
 			}
@@ -298,7 +298,7 @@ func (g GithubClient) SearchIssues(query string) ([]github.Issue, error) {
 		result, resp, err := g.client.Search.Issues(context.Background(), q, so)
 		if err != nil {
 			if _, ok := err.(*github.RateLimitError); ok {
-				log.Printf("Hitting Github search API rate limit, sleeping for 30 seconds... error message: %s", err)
+				log.Printf("Hitting Github search API rate limit, sleeping for 30 seconds... error message: %v", err)
 				time.Sleep(30 * time.Second)
 				continue
 			}
@@ -317,7 +317,7 @@ func (g GithubClient) SearchIssues(query string) ([]github.Issue, error) {
 			result, _, err = g.client.Search.Issues(context.Background(), q, so)
 			if err != nil {
 				if _, ok := err.(*github.RateLimitError); ok {
-					log.Printf("Hitting Github search API rate limit, sleeping for 30 seconds... error message: %s", err)
+					log.Printf("Hitting Github search API rate limit, sleeping for 30 seconds... error message: %v", err)
 					time.Sleep(30 * time.Second)
 					continue
 				}

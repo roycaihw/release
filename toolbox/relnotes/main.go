@@ -41,7 +41,7 @@ const (
 
 var (
 	// Flags
-	// TODO: golang flags and parameters syntex
+	// TODO: golang flags and parameters syntax
 	branch           = flag.String("branch", "", "Specify a branch other than the current one")
 	documentURL      = flag.String("doc-url", "https://docs.k8s.io", "Documentation URL displayed in release notes")
 	exampleURLPrefix = flag.String("example-url-prefix", "https://releases.k8s.io/", "Example URL prefix displayed in release notes")
@@ -85,7 +85,7 @@ func main() {
 		var err error
 		*branch, err = u.GetCurrentBranch()
 		if err != nil {
-			log.Printf("not a git repository: %s", err)
+			log.Printf("failed to get current branch: %v", err)
 			os.Exit(1)
 		}
 	}
@@ -105,7 +105,7 @@ func main() {
 	} else {
 		token, err := u.ReadToken(*githubToken)
 		if err != nil {
-			log.Printf("failed to read Github token: %s", err)
+			log.Printf("failed to read Github token: %v", err)
 			os.Exit(1)
 		}
 		*githubToken = token
@@ -117,7 +117,7 @@ func main() {
 	// Gather release related information including startTag, releaseTag, prMap and releasePRs
 	releaseInfo, err := gatherReleaseInfo(client, branchRange)
 	if err != nil {
-		log.Printf("failed to gather release related information: %s", err)
+		log.Printf("failed to gather release related information: %v", err)
 		os.Exit(1)
 	}
 
@@ -125,7 +125,7 @@ func main() {
 	log.Printf("Generating release notes...")
 	err = gatherPRNotes(prFileName, releaseInfo)
 	if err != nil {
-		log.Printf("failed to gather PR notes: %s", err)
+		log.Printf("failed to gather PR notes: %v", err)
 		os.Exit(1)
 	}
 
@@ -133,7 +133,7 @@ func main() {
 	log.Printf("Preparing layout...")
 	err = generateMDFile(client, releaseInfo.releaseTag, prFileName)
 	if err != nil {
-		log.Printf("failed to generate markdown file: %s", err)
+		log.Printf("failed to generate markdown file: %v", err)
 		os.Exit(1)
 	}
 
@@ -147,7 +147,7 @@ func main() {
 			"-e", "s,@\\([a-zA-Z0-9-]*\\),[@\\1](https://github.com/\\1),g", *mdFileName)
 
 		if err != nil {
-			log.Printf("failed to htmlize markdown file: %s", err)
+			log.Printf("failed to htmlize markdown file: %v", err)
 			os.Exit(1)
 		}
 	}
@@ -162,7 +162,7 @@ func main() {
 		// before running this function.
 		err = getCIJobStatus(*mdFileName, *branch, *htmlizeMD)
 		if err != nil {
-			log.Printf("failed to get CI status: %s", err)
+			log.Printf("failed to get CI status: %v", err)
 			os.Exit(1)
 		}
 	}
@@ -171,7 +171,7 @@ func main() {
 		// If HTML file name is given, generate HTML release note
 		err = createHTMLNote(*htmlFileName, *mdFileName)
 		if err != nil {
-			log.Printf("failed to generate HTML release note: %s", err)
+			log.Printf("failed to generate HTML release note: %v", err)
 			os.Exit(1)
 		}
 	}
@@ -181,7 +181,7 @@ func main() {
 		log.Printf("Displaying the markdown release note to stdout...")
 		dat, err := ioutil.ReadFile(*mdFileName)
 		if err != nil {
-			log.Printf("failed to read markdown release note: %s", err)
+			log.Printf("failed to read markdown release note: %v", err)
 			os.Exit(1)
 		}
 		fmt.Print(string(dat))
@@ -198,7 +198,7 @@ func gatherReleaseInfo(g *u.GithubClient, branchRange string) (*ReleaseInfo, err
 	// Get release related commits on the release branch within release range
 	releaseCommits, startTag, releaseTag, err := getReleaseCommits(g, *owner, *repo, *branch, branchRange)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get release commits for %s: %s", branchRange, err)
+		return nil, fmt.Errorf("failed to get release commits for %s: %v", branchRange, err)
 	}
 	info.startTag = startTag
 	info.releaseTag = releaseTag
@@ -206,7 +206,7 @@ func gatherReleaseInfo(g *u.GithubClient, branchRange string) (*ReleaseInfo, err
 	// Parse release related PR ids from the release commits
 	commitPRs, err := parsePRFromCommit(releaseCommits)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse release commits: %s", err)
+		return nil, fmt.Errorf("failed to parse release commits: %v", err)
 	}
 
 	log.Printf("Gathering \"release-note\" labelled PRs using Github search API. This may take a while...")
@@ -216,7 +216,7 @@ func gatherReleaseInfo(g *u.GithubClient, branchRange string) (*ReleaseInfo, err
 	query = u.AddQuery(query, "label", "release-note")
 	releaseNotePRs, err := g.SearchIssues(strings.Join(query, " "))
 	if err != nil {
-		return nil, fmt.Errorf("failed to search release-note labelled PRs: %s", err)
+		return nil, fmt.Errorf("failed to search release-note labelled PRs: %v", err)
 	}
 	log.Printf("\"release-note\" labelled PRs gathered.")
 
@@ -227,7 +227,7 @@ func gatherReleaseInfo(g *u.GithubClient, branchRange string) (*ReleaseInfo, err
 	query = u.AddQuery(query, "label", "release-note-action-required")
 	releaseNoteActionRequiredPRs, err := g.SearchIssues(strings.Join(query, " "))
 	if err != nil {
-		return nil, fmt.Errorf("failed to search release-note-action-required labelled PRs: %s", err)
+		return nil, fmt.Errorf("failed to search release-note-action-required labelled PRs: %v", err)
 	}
 	log.Printf("\"release-note-action-required\" labelled PRs gathered.")
 
@@ -267,11 +267,11 @@ func gatherPRNotes(prFileName string, info *ReleaseInfo) error {
 	var result error
 	prFile, err := os.Create(prFileName)
 	if err != nil {
-		return fmt.Errorf("failed to create release note file %s: %s", prFileName, err)
+		return fmt.Errorf("failed to create release note file %s: %v", prFileName, err)
 	}
 	defer func() {
 		if err = prFile.Close(); err != nil {
-			result = fmt.Errorf("failed to close file %s, %s", prFileName, err)
+			result = fmt.Errorf("failed to close file %s, %v", prFileName, err)
 		}
 	}()
 
@@ -290,11 +290,11 @@ func generateMDFile(g *u.GithubClient, releaseTag, prFileName string) error {
 	var result error
 	mdFile, err := os.Create(*mdFileName)
 	if err != nil {
-		return fmt.Errorf("failed to create release note markdown file %s: %s", *mdFileName, err)
+		return fmt.Errorf("failed to create release note markdown file %s: %v", *mdFileName, err)
 	}
 	defer func() {
 		if err = mdFile.Close(); err != nil {
-			result = fmt.Errorf("failed to close file %s, %s", *mdFileName, err)
+			result = fmt.Errorf("failed to close file %s, %v", *mdFileName, err)
 		}
 	}()
 
@@ -302,13 +302,13 @@ func generateMDFile(g *u.GithubClient, releaseTag, prFileName string) error {
 	exampleURL := fmt.Sprintf("%s%s/examples", *exampleURLPrefix, *branch)
 	err = createBody(mdFile, releaseTag, *branch, *documentURL, exampleURL, *releaseTars)
 	if err != nil {
-		return fmt.Errorf("failed to create file body: %s", err)
+		return fmt.Errorf("failed to create file body: %v", err)
 	}
 
 	// Copy (append) the pull request notes into the output markdown file
 	dat, err := ioutil.ReadFile(prFileName)
 	if err != nil {
-		return fmt.Errorf("failed to copy from PR file to release note markdown file: %s", err)
+		return fmt.Errorf("failed to copy from PR file to release note markdown file: %v", err)
 	}
 	mdFile.WriteString(string(dat))
 
@@ -316,7 +316,7 @@ func generateMDFile(g *u.GithubClient, releaseTag, prFileName string) error {
 		// If in preview mode, get the pending PRs
 		err = getPendingPRs(g, mdFile, *owner, *repo, *branch)
 		if err != nil {
-			return fmt.Errorf("failed to get pending PRs: %s", err)
+			return fmt.Errorf("failed to get pending PRs: %v", err)
 		}
 	}
 	return result
@@ -340,7 +340,7 @@ func getPendingPRs(g *u.GithubClient, f *os.File, owner, repo, branch string) er
 	query = u.AddQuery(query, "base", branch)
 	pendingPRs, err := g.SearchIssues(strings.Join(query, " "))
 	if err != nil {
-		return fmt.Errorf("failed to search pending PRs: %s", err)
+		return fmt.Errorf("failed to search pending PRs: %v", err)
 	}
 
 	for _, pr := range pendingPRs {
@@ -369,7 +369,7 @@ func createHTMLNote(htmlFileName, mdFileName string) error {
 	cssFileName := "/tmp/release_note_cssfile"
 	cssFile, err := os.Create(cssFileName)
 	if err != nil {
-		return fmt.Errorf("failed to create css file %s: %s", cssFileName, err)
+		return fmt.Errorf("failed to create css file %s: %v", cssFileName, err)
 	}
 
 	cssFile.WriteString("<style type=text/css> ")
@@ -381,21 +381,21 @@ func createHTMLNote(htmlFileName, mdFileName string) error {
 	// Writing to css file is a clear small logic so we don't separate it into
 	// another function.
 	if err = cssFile.Close(); err != nil {
-		return fmt.Errorf("failed to close file %s, %s", cssFileName, err)
+		return fmt.Errorf("failed to close file %s, %v", cssFileName, err)
 	}
 
 	htmlStr, err := u.Shell("pandoc", "-H", cssFileName, "--from", "markdown_github", "--to", "html", mdFileName)
 	if err != nil {
-		return fmt.Errorf("failed to generate html content: %s", err)
+		return fmt.Errorf("failed to generate html content: %v", err)
 	}
 
 	htmlFile, err := os.Create(htmlFileName)
 	if err != nil {
-		return fmt.Errorf("failed to create html file: %s", err)
+		return fmt.Errorf("failed to create html file: %v", err)
 	}
 	defer func() {
 		if err = htmlFile.Close(); err != nil {
-			result = fmt.Errorf("failed to close file %s, %s", htmlFileName, err)
+			result = fmt.Errorf("failed to close file %s, %v", htmlFileName, err)
 		}
 	}()
 
@@ -441,7 +441,7 @@ func getCIJobStatus(outputFile, branch string, htmlize bool) error {
 	}
 	defer func() {
 		if err = f.Close(); err != nil {
-			result = fmt.Errorf("failed to close file %s, %s", outputFile, err)
+			result = fmt.Errorf("failed to close file %s, %v", outputFile, err)
 		}
 	}()
 
@@ -488,19 +488,19 @@ func createBody(f *os.File, releaseTag, branch, docURL, exampleURL, releaseTars 
 		f.WriteString(fmt.Sprintf("## Downloads for %s\n\n", title))
 		err := createDownloadsTable(f, releaseTag, "", releaseTars+"/kubernetes.tar.gz", releaseTars+"/kubernetes-src.tar.gz")
 		if err != nil {
-			return fmt.Errorf("failed to create downloads table: %s", err)
+			return fmt.Errorf("failed to create downloads table: %v", err)
 		}
 		err = createDownloadsTable(f, releaseTag, "Client Binaries", releaseTars+"/kubernetes-client*.tar.gz")
 		if err != nil {
-			return fmt.Errorf("failed to create downloads table: %s", err)
+			return fmt.Errorf("failed to create downloads table: %v", err)
 		}
 		err = createDownloadsTable(f, releaseTag, "Server Binaries", releaseTars+"/kubernetes-server*.tar.gz")
 		if err != nil {
-			return fmt.Errorf("failed to create downloads table: %s", err)
+			return fmt.Errorf("failed to create downloads table: %v", err)
 		}
 		err = createDownloadsTable(f, releaseTag, "Node Binaries", releaseTars+"/kubernetes-node*.tar.gz")
 		if err != nil {
-			return fmt.Errorf("failed to create downloads table: %s", err)
+			return fmt.Errorf("failed to create downloads table: %v", err)
 		}
 		f.WriteString("\n")
 	}
@@ -537,7 +537,7 @@ func createDownloadsTable(f *os.File, releaseTag, heading string, filename ...st
 		fn := filepath.Base(file)
 		sha, err := u.GetSha256(file)
 		if err != nil {
-			return fmt.Errorf("failed to calc SHA256 of file %s: %s", file, err)
+			return fmt.Errorf("failed to calc SHA256 of file %s: %v", file, err)
 		}
 		f.WriteString(fmt.Sprintf("[%s](%s/%s/%s) | `%s`\n", fn, urlPrefix, releaseTag, fn, sha))
 	}
@@ -560,14 +560,14 @@ func minorRelease(f *os.File, release, draftURL, changelogURL string) {
 		log.Printf("Draft found - using for release notes...")
 		_, err = io.Copy(f, resp.Body)
 		if err != nil {
-			log.Printf("error during copy to file: %s", err)
+			log.Printf("error during copy to file: %v", err)
 			return
 		}
 		f.WriteString("\n")
 	} else {
 		log.Printf("Failed to find draft - creating generic template... (error message/status code printed below)")
 		if err != nil {
-			log.Printf("Error message: %s", err)
+			log.Printf("Error message: %v", err)
 		} else {
 			log.Printf("Response status code: %d", resp.StatusCode)
 		}
@@ -600,7 +600,7 @@ func minorRelease(f *os.File, release, draftURL, changelogURL string) {
 	} else {
 		log.Printf("Failed to fetch past changelog for minor release - continuing... (error message/status code printed below)")
 		if err != nil {
-			log.Printf("Error message: %s", err)
+			log.Printf("Error message: %v", err)
 		} else {
 			log.Printf("Response status code: %d", resp.StatusCode)
 		}
@@ -709,28 +709,28 @@ func getReleaseCommits(g *u.GithubClient, owner, repo, branch, branchRange strin
 	// Get start and release tag/commit based on input branch range
 	startTag, releaseTag, err := determineRange(g, owner, repo, branch, branchRange)
 	if err != nil {
-		return nil, "", "", fmt.Errorf("failed to determine branch range: %s", err)
+		return nil, "", "", fmt.Errorf("failed to determine branch range: %v", err)
 	}
 
 	// Get all tags in the repository
 	tags, err := g.ListAllTags(owner, repo)
 	if err != nil {
-		return nil, "", "", fmt.Errorf("failed to fetch repo tags: %s", err)
+		return nil, "", "", fmt.Errorf("failed to fetch repo tags: %v", err)
 	}
 
 	// Get commits for specified branch and range
 	tStart, err := g.GetCommitDate(owner, repo, startTag, tags)
 	if err != nil {
-		return nil, "", "", fmt.Errorf("failed to get start commit date for %s: %s", startTag, err)
+		return nil, "", "", fmt.Errorf("failed to get start commit date for %s: %v", startTag, err)
 	}
 	tEnd, err := g.GetCommitDate(owner, repo, releaseTag, tags)
 	if err != nil {
-		return nil, "", "", fmt.Errorf("failed to get release commit date for %s: %s", releaseTag, err)
+		return nil, "", "", fmt.Errorf("failed to get release commit date for %s: %v", releaseTag, err)
 	}
 
 	releaseCommits, err := g.ListAllCommits(owner, repo, branch, tStart, tEnd)
 	if err != nil {
-		return nil, "", "", fmt.Errorf("failed to fetch release repo commits: %s", err)
+		return nil, "", "", fmt.Errorf("failed to fetch release repo commits: %v", err)
 	}
 
 	return releaseCommits, startTag, releaseTag, nil
