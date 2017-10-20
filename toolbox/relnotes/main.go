@@ -122,7 +122,7 @@ func main() {
 	}
 
 	// Generating release note...
-	log.Printf("Generating release notes...")
+	log.Print("Generating release notes...")
 	err = gatherPRNotes(prFileName, releaseInfo)
 	if err != nil {
 		log.Printf("failed to gather PR notes: %v", err)
@@ -130,7 +130,7 @@ func main() {
 	}
 
 	// Start generating markdown file
-	log.Printf("Preparing layout...")
+	log.Print("Preparing layout...")
 	err = generateMDFile(client, releaseInfo.releaseTag, prFileName)
 	if err != nil {
 		log.Printf("failed to generate markdown file: %v", err)
@@ -178,7 +178,7 @@ func main() {
 
 	if !*quiet {
 		// If --quiet flag is not specified, print the markdown release note to stdout
-		log.Printf("Displaying the markdown release note to stdout...")
+		log.Print("Displaying the markdown release note to stdout...")
 		dat, err := ioutil.ReadFile(*mdFileName)
 		if err != nil {
 			log.Printf("failed to read markdown release note: %v", err)
@@ -194,7 +194,7 @@ func main() {
 
 func gatherReleaseInfo(g *u.GithubClient, branchRange string) (*ReleaseInfo, error) {
 	var info ReleaseInfo
-	log.Printf("Gathering release commits from Github...")
+	log.Print("Gathering release commits from Github...")
 	// Get release related commits on the release branch within release range
 	releaseCommits, startTag, releaseTag, err := getReleaseCommits(g, *owner, *repo, *branch, branchRange)
 	if err != nil {
@@ -209,7 +209,7 @@ func gatherReleaseInfo(g *u.GithubClient, branchRange string) (*ReleaseInfo, err
 		return nil, fmt.Errorf("failed to parse release commits: %v", err)
 	}
 
-	log.Printf("Gathering \"release-note\" labelled PRs using Github search API. This may take a while...")
+	log.Print("Gathering \"release-note\" labelled PRs using Github search API. This may take a while...")
 	var query []string
 	query = u.AddQuery(query, "repo", *owner, "/", *repo)
 	query = u.AddQuery(query, "type", "pr")
@@ -218,9 +218,9 @@ func gatherReleaseInfo(g *u.GithubClient, branchRange string) (*ReleaseInfo, err
 	if err != nil {
 		return nil, fmt.Errorf("failed to search release-note labelled PRs: %v", err)
 	}
-	log.Printf("\"release-note\" labelled PRs gathered.")
+	log.Print("\"release-note\" labelled PRs gathered.")
 
-	log.Printf("Gathering \"release-note-action-required\" labelled PRs using Github search API.")
+	log.Print("Gathering \"release-note-action-required\" labelled PRs using Github search API.")
 	query = nil
 	query = u.AddQuery(query, "repo", *owner, "/", *repo)
 	query = u.AddQuery(query, "type", "pr")
@@ -229,7 +229,7 @@ func gatherReleaseInfo(g *u.GithubClient, branchRange string) (*ReleaseInfo, err
 	if err != nil {
 		return nil, fmt.Errorf("failed to search release-note-action-required labelled PRs: %v", err)
 	}
-	log.Printf("\"release-note-action-required\" labelled PRs gathered.")
+	log.Print("\"release-note-action-required\" labelled PRs gathered.")
 
 	info.prMap = make(map[int]*github.Issue)
 	for _, i := range releaseNotePRs {
@@ -324,7 +324,7 @@ func generateMDFile(g *u.GithubClient, releaseTag, prFileName string) error {
 
 // getPendingPRs gets pending PRs on given branch in the repo.
 func getPendingPRs(g *u.GithubClient, f *os.File, owner, repo, branch string) error {
-	log.Printf("Getting pending PR status...")
+	log.Print("Getting pending PR status...")
 	f.WriteString("-------\n")
 	f.WriteString(fmt.Sprintf("## PENDING PRs on the %s branch\n", branch))
 
@@ -365,7 +365,7 @@ func getPendingPRs(g *u.GithubClient, f *os.File, owner, repo, branch string) er
 // createHTMLNote generates HTML release note based on the input markdown release note.
 func createHTMLNote(htmlFileName, mdFileName string) error {
 	var result error
-	log.Printf("Generating HTML release note...")
+	log.Print("Generating HTML release note...")
 	cssFileName := "/tmp/release_note_cssfile"
 	cssFile, err := os.Create(cssFileName)
 	if err != nil {
@@ -409,7 +409,7 @@ func createHTMLNote(htmlFileName, mdFileName string) error {
 // before running this function.
 func getCIJobStatus(outputFile, branch string, htmlize bool) error {
 	var result error
-	log.Printf("Getting CI job status (this may take a while)...")
+	log.Print("Getting CI job status (this may take a while)...")
 
 	red := "<span style=\"color:red\">"
 	green := "<span style=\"color:green\">"
@@ -459,7 +459,7 @@ func getCIJobStatus(outputFile, branch string, htmlize bool) error {
 	f.WriteString(content)
 	f.WriteString("```\n")
 
-	log.Printf("CI job status fetched.")
+	log.Print("CI job status fetched.")
 	return result
 }
 
@@ -557,7 +557,7 @@ func minorRelease(f *os.File, release, draftURL, changelogURL string) {
 	}
 
 	if err == nil && resp.StatusCode == 200 {
-		log.Printf("Draft found - using for release notes...")
+		log.Print("Draft found - using for release notes...")
 		_, err = io.Copy(f, resp.Body)
 		if err != nil {
 			log.Printf("error during copy to file: %v", err)
@@ -565,7 +565,7 @@ func minorRelease(f *os.File, release, draftURL, changelogURL string) {
 		}
 		f.WriteString("\n")
 	} else {
-		log.Printf("Failed to find draft - creating generic template... (error message/status code printed below)")
+		log.Print("Failed to find draft - creating generic template... (error message/status code printed below)")
 		if err != nil {
 			log.Printf("Error message: %v", err)
 		} else {
@@ -598,7 +598,7 @@ func minorRelease(f *os.File, release, draftURL, changelogURL string) {
 		}
 		f.WriteString("\n")
 	} else {
-		log.Printf("Failed to fetch past changelog for minor release - continuing... (error message/status code printed below)")
+		log.Print("Failed to fetch past changelog for minor release - continuing... (error message/status code printed below)")
 		if err != nil {
 			log.Printf("Error message: %v", err)
 		} else {

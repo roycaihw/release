@@ -153,7 +153,7 @@ func (g GithubClient) ListAllIssues(owner, repo string) ([]*github.Issue, error)
 		is, _, err := g.client.Issues.ListByRepo(context.Background(), owner, repo, ilo)
 		if err != nil {
 			// New line following the progress bar
-			fmt.Printf("\n")
+			fmt.Print("\n")
 			return nil, err
 		}
 		RenderProgressBar(ilo.ListOptions.Page, resp.LastPage, time.Now().Round(time.Second).Sub(start).String(), false)
@@ -164,8 +164,8 @@ func (g GithubClient) ListAllIssues(owner, repo string) ([]*github.Issue, error)
 		ilo.ListOptions.Page++
 	}
 	// New line following the progress bar
-	fmt.Printf("\n")
-	log.Printf("All issues fetched.")
+	fmt.Print("\n")
+	log.Print("All issues fetched.")
 	return issues, nil
 }
 
