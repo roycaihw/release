@@ -54,7 +54,7 @@ var (
 	owner         = flag.String("owner", "kubernetes", "Github owner or organization")
 	preview       = flag.Bool("preview", false, "Report additional branch statistics (used for reporting outside of releases)")
 	quiet         = flag.Bool("quiet", false, "Don't display the notes when done")
-	releaseBucket = flag.String("release-bucket", "kubernetes-release", "Specify gs bucket to point to in generated notes (informational only)")
+	releaseBucket = flag.String("release-bucket", "kubernetes-release", "Specify Google Storage bucket to point to in generated notes (informational only)")
 	releaseTars   = flag.String("release-tars", "", "Directory of tars to sha256 sum for display")
 	repo          = flag.String("repo", "kubernetes", "Github repository")
 
@@ -523,6 +523,10 @@ func createDownloadsTable(f *os.File, releaseTag, heading string, filename ...st
 		urlPrefix = k8sReleaseURLPrefix
 	} else {
 		urlPrefix = fmt.Sprintf("https://storage.googleapis.com/%s/release", *releaseBucket)
+	}
+
+	if *releaseBucket == "" {
+		log.Print("NOTE: empty Google Storage bucket specified. Please specify valid bucket using \"release-bucket\" flag.")
 	}
 
 	if heading != "" {
