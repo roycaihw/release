@@ -59,7 +59,8 @@ var (
 	repo          = flag.String("repo", "kubernetes", "Github repository")
 
 	// Global
-	branchHead = ""
+	branchHead      = ""
+	branchVerSuffix = "" // e.g. branch: "release-1.8", branchVerSuffix: "-1.8"
 )
 
 // ReleaseInfo contains release related information to generate a release note.
@@ -89,6 +90,8 @@ func main() {
 			os.Exit(1)
 		}
 	}
+	branchVerSuffix = strings.TrimPrefix(*branch, "release")
+	log.Printf("Working branch: %s. Branch version suffix: %s.", *branch, branchVerSuffix)
 
 	prFileName := fmt.Sprintf("/tmp/release-notes-%s-prnotes", *branch)
 	if *mdFileName == "" {
@@ -109,6 +112,11 @@ func main() {
 			os.Exit(1)
 		}
 		*githubToken = token
+	}
+	// Github token must be provided to ensure great rate limit experience
+	if *githubToken == "" {
+		log.Print("Github token not provided. Exiting now...")
+		os.Exit(1)
 	}
 	client := u.NewClient(*githubToken)
 
@@ -143,7 +151,7 @@ func main() {
 		// Also, expand anchors (needed for email announce())
 		projectGithubURL := fmt.Sprintf("https://github.com/%s/%s", *owner, *repo)
 		_, err = u.Shell("sed", "-i", "-e", "s,#\\([0-9]\\{5\\,\\}\\),[#\\1]("+projectGithubURL+"/pull/\\1),g",
-			"-e", "s,\\(#v[0-9]\\{3\\}-\\),"+projectGithubURL+"/blob/master/CHANGELOG.md\\1,g",
+			"-e", "s,\\(#v[0-9]\\{3\\}-\\),"+projectGithubURL+"/blob/master/CHANGELOG"+branchVerSuffix+".md\\1,g",
 			"-e", "s,@\\([a-zA-Z0-9-]*\\),[@\\1](https://github.com/\\1),g", *mdFileName)
 
 		if err != nil {
@@ -278,7 +286,7 @@ func gatherPRNotes(prFileName string, info *ReleaseInfo) error {
 	// Bootstrap notes for minor (new branch) releases
 	if *full || u.IsVer(info.releaseTag, verDotzero) {
 		draftURL := fmt.Sprintf("%s%s/features/master/%s/release-notes-draft.md", u.GithubRawURL, *owner, *branch)
-		changelogURL := fmt.Sprintf("%s%s/%s/master/CHANGELOG.md", u.GithubRawURL, *owner, *repo)
+		changelogURL := fmt.Sprintf("%s%s/%s/master/CHANGELOG%s.md", u.GithubRawURL, *owner, *repo, branchVerSuffix)
 		minorRelease(prFile, info.releaseTag, draftURL, changelogURL)
 	} else {
 		patchRelease(prFile, info)
@@ -486,21 +494,21 @@ func createBody(f *os.File, releaseTag, branch, docURL, exampleURL, releaseTars 
 
 	if releaseTars != "" {
 		f.WriteString(fmt.Sprintf("## Downloads for %s\n\n", title))
-		err := createDownloadsTable(f, releaseTag, "", releaseTars+"/kubernetes.tar.gz", releaseTars+"/kubernetes-src.tar.gz")
-		if err != nil {
-			return fmt.Errorf("failed to create downloads table: %v", err)
+		tables := []struct {
+			heading  string
+			filename []string
+		}{
+			{"", []string{releaseTars + "/kubernetes.tar.gz", releaseTars + "/kubernetes-src.tar.gz"}},
+			{"Client Binaries", []string{releaseTars + "/kubernetes-client*.tar.gz"}},
+			{"Server Binaries", []string{releaseTars + "/kubernetes-server*.tar.gz"}},
+			{"Node Binaries", []string{releaseTars + "/kubernetes-node*.tar.gz"}},
 		}
-		err = createDownloadsTable(f, releaseTag, "Client Binaries", releaseTars+"/kubernetes-client*.tar.gz")
-		if err != nil {
-			return fmt.Errorf("failed to create downloads table: %v", err)
-		}
-		err = createDownloadsTable(f, releaseTag, "Server Binaries", releaseTars+"/kubernetes-server*.tar.gz")
-		if err != nil {
-			return fmt.Errorf("failed to create downloads table: %v", err)
-		}
-		err = createDownloadsTable(f, releaseTag, "Node Binaries", releaseTars+"/kubernetes-node*.tar.gz")
-		if err != nil {
-			return fmt.Errorf("failed to create downloads table: %v", err)
+
+		for _, table := range tables {
+			err := createDownloadsTable(f, releaseTag, table.heading, table.filename...)
+			if err != nil {
+				return fmt.Errorf("failed to create downloads table: %v", err)
+			}
 		}
 		f.WriteString("\n")
 	}
@@ -547,7 +555,6 @@ func createDownloadsTable(f *os.File, releaseTag, heading string, filename ...st
 // minorReleases performs a minor (vX.Y.0) release by fetching the release template and aggregate
 // previous release in series.
 func minorRelease(f *os.File, release, draftURL, changelogURL string) {
-
 	// Check for draft and use it if available
 	log.Printf("Checking if draft release notes exist for %s...", release)
 
@@ -581,6 +588,7 @@ func minorRelease(f *os.File, release, draftURL, changelogURL string) {
 	// Assume the release tag is v1.7.0, this regexp matches "- [v1.7.0-" in
 	//     "- [v1.7.0-rc.1](#v170-rc1)"
 	//     "- [v1.7.0-beta.2](#v170-beta2)"
+	//     "- [v1.7.0-alpha.3](#v170-alpha3)"
 	reAnchor, _ := regexp.Compile(fmt.Sprintf("- \\[%s-", release))
 
 	resp, err = http.Get(changelogURL)
