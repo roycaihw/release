@@ -29,17 +29,17 @@ a kubernetes repo):**
 
 * (On branch release-1.7:)
 
-`../release/bazel-bin/toolbox/relnotes/relnotes -preview -htmlize-md
+`../release/bazel-bin/toolbox/relnotes/relnotes --preview --htmlize-md
 --html-file /tmp/release-note-html-testfile
 --release-tars=_output/release-tars v1.7.0..v1.7.2`
 
 * (On branch release-1.7:)
 
-`../release/bazel-bin/toolbox/relnotes/relnotes -preview --html-file
+`../release/bazel-bin/toolbox/relnotes/relnotes --preview --html-file
 /tmp/release-note-html-testfile --release-tars=_output/release-tars
 v1.7.0..v1.7.0`
 
 * (On branch release-1.6.3:)
 
 `../release/bazel-bin/toolbox/relnotes/relnotes --html-file
-/tmp/release-note-html-testfile -full`
+/tmp/release-note-html-testfile --full`
